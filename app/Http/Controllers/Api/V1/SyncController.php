@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\SyncLogsRequest;
 use App\Http\Resources\AttendanceLogResource;
 use App\Http\Resources\WorkerResource;
+use App\Jobs\CalculateWorkSummary;
+use App\Jobs\ProcessAttendanceSync;
 use App\Models\AttendanceLog;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -48,9 +50,34 @@ class SyncController extends Controller
         }
 
         $logs = $request->validated('logs');
+        $async = $request->boolean('async', false);
+
+        // For large batches (>20 logs), use async processing
+        if ($async || count($logs) > 20) {
+            return $this->syncLogsAsync($logs, $user);
+        }
+
+        return $this->syncLogsSync($logs, $user);
+    }
+
+    private function syncLogsAsync(array $logs, User $user): JsonResponse
+    {
+        ProcessAttendanceSync::dispatch($logs, $user->id);
+
+        return response()->json([
+            'message' => 'Logs queued for processing',
+            'server_time' => now()->toIso8601String(),
+            'queued_count' => count($logs),
+            'processing' => 'async',
+        ], 202);
+    }
+
+    private function syncLogsSync(array $logs, User $user): JsonResponse
+    {
         $synced = [];
         $duplicates = [];
         $errors = [];
+        $processedWorkers = [];
 
         foreach ($logs as $log) {
             $eventId = AttendanceLog::generateEventId(
@@ -88,6 +115,20 @@ class SyncController extends Controller
                 $flagReason = 'Future timestamp detected';
             }
 
+            // Check for duplicate scan within 5 minutes
+            $recentScan = AttendanceLog::where('worker_id', $log['worker_id'])
+                ->where('type', $log['type'])
+                ->whereBetween('device_time', [
+                    $deviceTime->copy()->subMinutes(5),
+                    $deviceTime->copy()->addMinutes(5)
+                ])
+                ->exists();
+
+            if ($recentScan) {
+                $flagged = true;
+                $flagReason = 'Duplicate scan within 5 minutes';
+            }
+
             $attendanceLog = AttendanceLog::create([
                 'event_id' => $eventId,
                 'worker_id' => $log['worker_id'],
@@ -106,6 +147,18 @@ class SyncController extends Controller
             ]);
 
             $synced[] = new AttendanceLogResource($attendanceLog);
+
+            // Track workers for summary calculation
+            $workerDate = $deviceTime->format('Y-m-d');
+            $processedWorkers[$log['worker_id']][$workerDate] = true;
+        }
+
+        // Dispatch work summary calculations
+        foreach ($processedWorkers as $workerId => $dates) {
+            foreach (array_keys($dates) as $date) {
+                CalculateWorkSummary::dispatch($workerId, $date, 'daily')
+                    ->delay(now()->addSeconds(5));
+            }
         }
 
         return response()->json([

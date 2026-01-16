@@ -47,6 +47,47 @@ services:
     networks:
       - verifystaff_network
 
+  # Laravel Scheduler (runs cron jobs)
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: verifystaff_scheduler
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - verifystaff_network
+    depends_on:
+      - app
+      - db
+    command: >
+      sh -c "echo 'Scheduler started...' &&
+             while true; do
+               php artisan schedule:run --verbose --no-interaction;
+               sleep 60;
+             done"
+
+  # Laravel Queue Worker (processes background jobs)
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: verifystaff_queue
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - verifystaff_network
+    depends_on:
+      - app
+      - db
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+
   # Node.js for React PWA Development
   node:
     image: node:20-alpine
