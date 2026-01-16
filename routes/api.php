@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\ReportsController;
 use App\Http\Controllers\Api\V1\SyncController;
 use App\Http\Controllers\Api\V1\TotpController;
 use Illuminate\Support\Facades\Route;
@@ -25,5 +26,20 @@ Route::prefix('v1')->group(function () {
         // TOTP
         Route::get('totp/generate', [TotpController::class, 'generateCode']);
         Route::post('totp/verify', [TotpController::class, 'verifyCode']);
+
+        // Reports - Single Worker
+        Route::get('reports/summary/{workerId}/daily', [ReportsController::class, 'dailySummary']);
+        Route::get('reports/summary/{workerId}/weekly', [ReportsController::class, 'weeklySummary']);
+        Route::get('reports/summary/{workerId}/monthly', [ReportsController::class, 'monthlySummary']);
+        Route::get('reports/logs/{workerId}', [ReportsController::class, 'workerLogs']);
+
+        // Reports - All Workers
+        Route::get('reports/all/daily', [ReportsController::class, 'allWorkersDailySummary']);
+        Route::get('reports/all/weekly', [ReportsController::class, 'allWorkersWeeklySummary']);
+        Route::get('reports/all/monthly', [ReportsController::class, 'allWorkersMonthlySummary']);
+        Route::get('reports/all/yearly', [ReportsController::class, 'allWorkersYearlySummary']);
+
+        // Reports - Flagged
+        Route::get('reports/flagged', [ReportsController::class, 'flaggedLogs']);
     });
 });
