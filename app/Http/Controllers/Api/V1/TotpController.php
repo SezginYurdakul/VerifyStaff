@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\VerifyTotpRequest;
+use App\Models\User;
 use App\Services\TotpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,22 +41,9 @@ class TotpController extends Controller
         ]);
     }
 
-    public function verifyCode(Request $request): JsonResponse
+    public function verifyCode(VerifyTotpRequest $request): JsonResponse
     {
-        $request->validate([
-            'worker_id' => 'required|integer|exists:users,id',
-            'code' => 'required|string|size:6',
-        ]);
-
-        $user = $request->user();
-
-        if (!$user->isRepresentative() && !$user->isAdmin()) {
-            return response()->json([
-                'message' => 'Only representatives can verify TOTP codes.',
-            ], 403);
-        }
-
-        $worker = \App\Models\User::where('id', $request->worker_id)
+        $worker = User::where('id', $request->validated('worker_id'))
             ->where('role', 'worker')
             ->where('status', 'active')
             ->first();
@@ -73,7 +62,7 @@ class TotpController extends Controller
             ], 400);
         }
 
-        $isValid = $this->totpService->verifyCode($worker->secret_token, $request->code);
+        $isValid = $this->totpService->verifyCode($worker->secret_token, $request->validated('code'));
 
         return response()->json([
             'valid' => $isValid,

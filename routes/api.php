@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\ReportsController;
+use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\SyncController;
 use App\Http\Controllers\Api\V1\TotpController;
 use Illuminate\Support\Facades\Route;
@@ -31,6 +32,7 @@ Route::prefix('v1')->group(function () {
         Route::get('reports/summary/{workerId}/daily', [ReportsController::class, 'dailySummary']);
         Route::get('reports/summary/{workerId}/weekly', [ReportsController::class, 'weeklySummary']);
         Route::get('reports/summary/{workerId}/monthly', [ReportsController::class, 'monthlySummary']);
+        Route::get('reports/summary/{workerId}/yearly', [ReportsController::class, 'yearlySummary']);
         Route::get('reports/logs/{workerId}', [ReportsController::class, 'workerLogs']);
 
         // Reports - All Workers
@@ -41,5 +43,19 @@ Route::prefix('v1')->group(function () {
 
         // Reports - Flagged
         Route::get('reports/flagged', [ReportsController::class, 'flaggedLogs']);
+
+        // Settings - Work hours config (for representatives)
+        Route::get('settings/work-hours', [SettingsController::class, 'workHours']);
+        Route::get('settings/attendance-mode', [SettingsController::class, 'attendanceMode']);
+
+        // Settings - Admin only
+        Route::get('settings', [SettingsController::class, 'index']);
+        Route::get('settings/group/{group}', [SettingsController::class, 'group']);
+        Route::get('settings/{key}', [SettingsController::class, 'show']);
+        Route::put('settings/{key}', [SettingsController::class, 'update']);
+        Route::put('settings', [SettingsController::class, 'updateBulk']);
+        Route::put('settings/config/shifts', [SettingsController::class, 'updateShifts']);
+        Route::put('settings/config/working-days', [SettingsController::class, 'updateWorkingDays']);
+        Route::put('settings/config/attendance-mode', [SettingsController::class, 'updateAttendanceMode']);
     });
 });
