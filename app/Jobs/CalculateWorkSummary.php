@@ -21,23 +21,24 @@ class CalculateWorkSummary implements ShouldQueue
     public function __construct(
         public int $workerId,
         public string $date,
-        public string $periodType = 'daily'
+        public string $periodType = 'weekly'
     ) {}
 
     public function handle(WorkSummaryService $service): void
     {
         $worker = User::find($this->workerId);
 
-        if (!$worker) {
+        if (! $worker) {
             return;
         }
 
         $date = Carbon::parse($this->date);
 
         match ($this->periodType) {
-            'daily' => $service->calculateDaily($worker, $date),
             'weekly' => $service->calculateWeekly($worker, $date->startOfWeek()),
             'monthly' => $service->calculateMonthly($worker, $date->startOfMonth()),
+            'yearly' => $service->calculateYearly($worker, $date->year),
+            default => null, // daily no longer supported
         };
     }
 

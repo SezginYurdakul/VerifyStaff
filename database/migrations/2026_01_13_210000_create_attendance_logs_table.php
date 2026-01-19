@@ -27,11 +27,23 @@ return new class extends Migration
             $table->string('flag_reason')->nullable();
             $table->decimal('latitude', 10, 8)->nullable();
             $table->decimal('longitude', 11, 8)->nullable();
+
+            // Paired check-out reference (for check-in records)
+            $table->foreignId('paired_log_id')->nullable()->constrained('attendance_logs')->nullOnDelete();
+
+            // Calculated fields (set on check-out)
+            $table->unsignedInteger('work_minutes')->nullable();
+            $table->boolean('is_late')->nullable();
+            $table->boolean('is_early_departure')->nullable();
+            $table->boolean('is_overtime')->nullable();
+            $table->unsignedInteger('overtime_minutes')->nullable();
+
             $table->timestamps();
 
             $table->index(['worker_id', 'device_time']);
             $table->index(['rep_id', 'device_time']);
             $table->index('sync_status');
+            $table->index(['worker_id', 'type', 'device_time']);
         });
     }
 

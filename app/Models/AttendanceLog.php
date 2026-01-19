@@ -25,6 +25,13 @@ class AttendanceLog extends Model
         'flag_reason',
         'latitude',
         'longitude',
+        // Calculated fields
+        'paired_log_id',
+        'work_minutes',
+        'is_late',
+        'is_early_departure',
+        'is_overtime',
+        'overtime_minutes',
     ];
 
     protected function casts(): array
@@ -35,7 +42,15 @@ class AttendanceLog extends Model
             'flagged' => 'boolean',
             'latitude' => 'decimal:8',
             'longitude' => 'decimal:8',
+            'is_late' => 'boolean',
+            'is_early_departure' => 'boolean',
+            'is_overtime' => 'boolean',
         ];
+    }
+
+    public function pairedLog(): BelongsTo
+    {
+        return $this->belongsTo(AttendanceLog::class, 'paired_log_id');
     }
 
     public function worker(): BelongsTo

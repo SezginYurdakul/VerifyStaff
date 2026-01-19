@@ -14,6 +14,12 @@ class StressTestSeeder extends Seeder
     private const LOGS_PER_WORKER = 500;
     private const BATCH_SIZE = 1000;
 
+    // Work time constants (same as SyncController)
+    private const REGULAR_WORK_MINUTES = 480; // 8 hours
+    private const WORK_START_TIME = '09:00';
+    private const WORK_END_TIME = '18:00';
+    private const LATE_THRESHOLD_MINUTES = 15;
+
     public function run(): void
     {
         $this->command->info('Creating admin and representative...');
@@ -91,11 +97,13 @@ class StressTestSeeder extends Seeder
     private function createAttendanceLogs(array $workerIds, int $repId): void
     {
         $timezone = 'Europe/Istanbul';
-        $logsData = [];
         $totalLogs = 0;
         $targetLogs = count($workerIds) * self::LOGS_PER_WORKER;
 
-        foreach ($workerIds as $workerId) {
+        // We need to insert check-in first, get its ID, then insert check-out with paired_log_id
+        // So we'll process in smaller batches per worker
+
+        foreach ($workerIds as $workerIndex => $workerId) {
             $dayOffset = 0;
             $logsCreated = 0;
 
@@ -130,58 +138,111 @@ class StressTestSeeder extends Seeder
 
                 $checkOutTime = $date->copy()->setTime($checkOutHour, $checkOutMinute, rand(0, 59));
 
-                // Flags
-                $isLate = $checkInHour >= 9 && $checkInMinute > 15;
-                $isEarly = $checkOutHour < 17;
+                // Calculate is_late for check-in
+                $expectedStart = $checkInTime->copy()->setTimeFromTimeString(self::WORK_START_TIME);
+                $graceEnd = $expectedStart->copy()->addMinutes(self::LATE_THRESHOLD_MINUTES);
+                $isLate = $checkInTime->gt($graceEnd);
 
-                // Check-in log
-                $logsData[] = $this->buildLogData($workerId, $repId, 'in', $checkInTime, $timezone, $isLate);
+                // Insert check-in log
+                $checkInId = DB::table('attendance_logs')->insertGetId(
+                    $this->buildCheckInData($workerId, $repId, $checkInTime, $timezone, $isLate)
+                );
                 $logsCreated++;
                 $totalLogs++;
 
-                // Check-out log
+                // Check-out log with pairing
                 if ($logsCreated < self::LOGS_PER_WORKER) {
-                    $logsData[] = $this->buildLogData($workerId, $repId, 'out', $checkOutTime, $timezone, $isEarly);
+                    // Calculate work duration
+                    $workMinutes = $checkInTime->diffInMinutes($checkOutTime);
+
+                    // Check for overtime
+                    $isOvertime = $workMinutes > self::REGULAR_WORK_MINUTES;
+                    $overtimeMinutes = $isOvertime ? $workMinutes - self::REGULAR_WORK_MINUTES : 0;
+
+                    // Check for early departure
+                    $expectedEnd = $checkOutTime->copy()->setTimeFromTimeString(self::WORK_END_TIME);
+                    $isEarlyDeparture = $checkOutTime->lt($expectedEnd);
+
+                    // Insert check-out log
+                    $checkOutId = DB::table('attendance_logs')->insertGetId(
+                        $this->buildCheckOutData($workerId, $repId, $checkOutTime, $timezone, $checkInId, $workMinutes, $isOvertime, $overtimeMinutes, $isEarlyDeparture)
+                    );
+
+                    // Update check-in with paired_log_id
+                    DB::table('attendance_logs')->where('id', $checkInId)->update(['paired_log_id' => $checkOutId]);
+
                     $logsCreated++;
                     $totalLogs++;
                 }
+            }
 
-                // Insert in batches
-                if (count($logsData) >= self::BATCH_SIZE) {
-                    DB::table('attendance_logs')->insert($logsData);
-                    $logsData = [];
-                    $percentage = round(($totalLogs / $targetLogs) * 100, 1);
-                    $this->command->info("Progress: {$totalLogs} / {$targetLogs} logs ({$percentage}%)");
-                }
+            // Progress update per worker
+            if (($workerIndex + 1) % 10 === 0) {
+                $percentage = round(($totalLogs / $targetLogs) * 100, 1);
+                $this->command->info("Progress: {$totalLogs} / {$targetLogs} logs ({$percentage}%)");
             }
         }
 
-        // Insert remaining logs
-        if (!empty($logsData)) {
-            DB::table('attendance_logs')->insert($logsData);
-            $this->command->info("Progress: {$totalLogs} / {$targetLogs} logs (100%)");
-        }
+        $this->command->info("Progress: {$totalLogs} / {$targetLogs} logs (100%)");
     }
 
-    private function buildLogData(int $workerId, int $repId, string $type, Carbon $deviceTime, string $timezone, bool $flagged): array
+    private function buildCheckInData(int $workerId, int $repId, Carbon $deviceTime, string $timezone, bool $isLate): array
     {
-        $eventId = hash('sha256', $workerId . $repId . $deviceTime->toIso8601String() . $type . uniqid());
+        $eventId = hash('sha256', $workerId . $repId . $deviceTime->toIso8601String() . 'in' . uniqid());
 
         return [
             'event_id' => $eventId,
             'worker_id' => $workerId,
             'rep_id' => $repId,
-            'type' => $type,
+            'type' => 'in',
             'device_time' => $deviceTime,
             'device_timezone' => $timezone,
             'sync_time' => $deviceTime->copy()->addMinutes(rand(1, 120)),
             'sync_attempt' => 1,
             'offline_duration_seconds' => rand(0, 7200),
             'sync_status' => 'synced',
-            'flagged' => $flagged,
-            'flag_reason' => $flagged ? ($type === 'in' ? 'Late arrival' : 'Early departure') : null,
+            'flagged' => false,
+            'flag_reason' => null,
             'latitude' => 41.0082 + (rand(-1000, 1000) / 100000),
             'longitude' => 28.9784 + (rand(-1000, 1000) / 100000),
+            // Calculated fields for check-in
+            'is_late' => $isLate,
+            'paired_log_id' => null, // Will be updated after check-out is created
+            'work_minutes' => null,
+            'is_overtime' => null,
+            'overtime_minutes' => null,
+            'is_early_departure' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+    }
+
+    private function buildCheckOutData(int $workerId, int $repId, Carbon $deviceTime, string $timezone, int $pairedLogId, int $workMinutes, bool $isOvertime, int $overtimeMinutes, bool $isEarlyDeparture): array
+    {
+        $eventId = hash('sha256', $workerId . $repId . $deviceTime->toIso8601String() . 'out' . uniqid());
+
+        return [
+            'event_id' => $eventId,
+            'worker_id' => $workerId,
+            'rep_id' => $repId,
+            'type' => 'out',
+            'device_time' => $deviceTime,
+            'device_timezone' => $timezone,
+            'sync_time' => $deviceTime->copy()->addMinutes(rand(1, 120)),
+            'sync_attempt' => 1,
+            'offline_duration_seconds' => rand(0, 7200),
+            'sync_status' => 'synced',
+            'flagged' => false,
+            'flag_reason' => null,
+            'latitude' => 41.0082 + (rand(-1000, 1000) / 100000),
+            'longitude' => 28.9784 + (rand(-1000, 1000) / 100000),
+            // Calculated fields for check-out
+            'is_late' => null,
+            'paired_log_id' => $pairedLogId,
+            'work_minutes' => $workMinutes,
+            'is_overtime' => $isOvertime,
+            'overtime_minutes' => $overtimeMinutes,
+            'is_early_departure' => $isEarlyDeparture,
             'created_at' => now(),
             'updated_at' => now(),
         ];

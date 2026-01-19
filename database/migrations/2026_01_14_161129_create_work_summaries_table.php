@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('work_summaries', function (Blueprint $table) {
             $table->id();
             $table->foreignId('worker_id')->constrained('users')->onDelete('cascade');
-            $table->enum('period_type', ['daily', 'weekly', 'monthly']);
+            $table->enum('period_type', ['daily', 'weekly', 'monthly', 'yearly']);
             $table->date('period_start');
             $table->date('period_end');
 

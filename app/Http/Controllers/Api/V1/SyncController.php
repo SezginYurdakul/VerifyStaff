@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\SyncLogsRequest;
 use App\Http\Resources\AttendanceLogResource;
 use App\Http\Resources\WorkerResource;
-use App\Jobs\CalculateWorkSummary;
 use App\Jobs\ProcessAttendanceSync;
 use App\Models\AttendanceLog;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
 
 class SyncController extends Controller
 {
+
     public function getStaffList(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -77,7 +78,14 @@ class SyncController extends Controller
         $synced = [];
         $duplicates = [];
         $errors = [];
-        $processedWorkers = [];
+
+        // Get settings from database
+        $config = Setting::getWorkHoursConfig();
+        $workStartTime = $config['work_start_time'];
+        $workEndTime = $config['work_end_time'];
+        $regularWorkMinutes = $config['regular_work_minutes'];
+        $lateThresholdMinutes = $config['late_threshold_minutes'];
+        $duplicateScanWindow = $config['duplicate_scan_window_minutes'];
 
         foreach ($logs as $log) {
             $eventId = AttendanceLog::generateEventId(
@@ -115,21 +123,21 @@ class SyncController extends Controller
                 $flagReason = 'Future timestamp detected';
             }
 
-            // Check for duplicate scan within 5 minutes
+            // Check for duplicate scan within configured window
             $recentScan = AttendanceLog::where('worker_id', $log['worker_id'])
                 ->where('type', $log['type'])
                 ->whereBetween('device_time', [
-                    $deviceTime->copy()->subMinutes(5),
-                    $deviceTime->copy()->addMinutes(5)
+                    $deviceTime->copy()->subMinutes($duplicateScanWindow),
+                    $deviceTime->copy()->addMinutes($duplicateScanWindow)
                 ])
                 ->exists();
 
             if ($recentScan) {
                 $flagged = true;
-                $flagReason = 'Duplicate scan within 5 minutes';
+                $flagReason = "Duplicate scan within {$duplicateScanWindow} minutes";
             }
 
-            $attendanceLog = AttendanceLog::create([
+            $logData = [
                 'event_id' => $eventId,
                 'worker_id' => $log['worker_id'],
                 'rep_id' => $user->id,
@@ -144,21 +152,53 @@ class SyncController extends Controller
                 'flag_reason' => $flagReason,
                 'latitude' => $log['latitude'] ?? null,
                 'longitude' => $log['longitude'] ?? null,
-            ]);
+            ];
+
+            // Calculate fields based on type
+            if ($log['type'] === 'in') {
+                // Check for late arrival using settings
+                $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workStartTime);
+                $graceEnd = $expectedStart->copy()->addMinutes($lateThresholdMinutes);
+                $logData['is_late'] = $deviceTime->gt($graceEnd);
+            } elseif ($log['type'] === 'out') {
+                // Find matching check-in (unpaired, same day, before this check-out)
+                $checkIn = AttendanceLog::where('worker_id', $log['worker_id'])
+                    ->where('type', 'in')
+                    ->whereNull('paired_log_id')
+                    ->whereDate('device_time', $deviceTime->toDateString())
+                    ->where('device_time', '<', $deviceTime)
+                    ->orderBy('device_time', 'desc')
+                    ->first();
+
+                if ($checkIn) {
+                    // Calculate work duration
+                    $workMinutes = $checkIn->device_time->diffInMinutes($deviceTime);
+                    $logData['work_minutes'] = $workMinutes;
+                    $logData['paired_log_id'] = $checkIn->id;
+
+                    // Check for overtime using settings
+                    if ($workMinutes > $regularWorkMinutes) {
+                        $logData['is_overtime'] = true;
+                        $logData['overtime_minutes'] = $workMinutes - $regularWorkMinutes;
+                    } else {
+                        $logData['is_overtime'] = false;
+                        $logData['overtime_minutes'] = 0;
+                    }
+
+                    // Check for early departure using settings
+                    $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workEndTime);
+                    $logData['is_early_departure'] = $deviceTime->lt($expectedEnd);
+                }
+            }
+
+            $attendanceLog = AttendanceLog::create($logData);
+
+            // If this is a check-out with a paired check-in, update the check-in's paired_log_id
+            if ($log['type'] === 'out' && isset($checkIn)) {
+                $checkIn->update(['paired_log_id' => $attendanceLog->id]);
+            }
 
             $synced[] = new AttendanceLogResource($attendanceLog);
-
-            // Track workers for summary calculation
-            $workerDate = $deviceTime->format('Y-m-d');
-            $processedWorkers[$log['worker_id']][$workerDate] = true;
-        }
-
-        // Dispatch work summary calculations
-        foreach ($processedWorkers as $workerId => $dates) {
-            foreach (array_keys($dates) as $date) {
-                CalculateWorkSummary::dispatch($workerId, $date, 'daily')
-                    ->delay(now()->addSeconds(5));
-            }
         }
 
         return response()->json([
