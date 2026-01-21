@@ -74,7 +74,18 @@ class TotpService
 
     private function deriveSecret(string $secretToken): string
     {
+        // Create a deterministic base32 secret from the token
+        // Google2FA requires a base32-encoded secret (A-Z, 2-7)
         $hash = hash('sha256', $secretToken, true);
-        return $this->google2fa->generateSecretKey(16, substr($hash, 0, 10));
+        $base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        $secret = '';
+
+        // Use 16 bytes of hash to create a 16-character base32 secret
+        for ($i = 0; $i < 16; $i++) {
+            $byte = ord($hash[$i]);
+            $secret .= $base32Chars[$byte % 32];
+        }
+
+        return $secret;
     }
 }
