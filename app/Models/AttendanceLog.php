@@ -17,6 +17,7 @@ class AttendanceLog extends Model
         'event_id',
         'worker_id',
         'rep_id',
+        'kiosk_id',
         'type',
         'device_time',
         'device_timezone',
