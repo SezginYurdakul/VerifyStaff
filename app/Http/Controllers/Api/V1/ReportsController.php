@@ -8,6 +8,7 @@ use App\Jobs\CalculateWorkSummary;
 use App\Models\AttendanceLog;
 use App\Models\User;
 use App\Models\WorkSummary;
+use App\Services\ReportService;
 use App\Services\WorkSummaryService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 class ReportsController extends Controller
 {
     public function __construct(
+        private ReportService $reportService,
         private WorkSummaryService $summaryService
     ) {}
 
@@ -34,63 +36,14 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Worker not found'], 404);
         }
 
-        $date = $request->query('date') ? Carbon::parse($request->query('date')) : Carbon::today();
-
-        // Aggregate directly from attendance_logs (no more daily work_summaries)
-        $checkoutStats = AttendanceLog::where('worker_id', $workerId)
-            ->where('type', 'out')
-            ->whereNotNull('work_minutes')
-            ->whereDate('device_time', $date)
-            ->selectRaw('
-                SUM(work_minutes) as total_minutes,
-                SUM(CASE WHEN is_overtime = 1 THEN overtime_minutes ELSE 0 END) as overtime_minutes,
-                SUM(CASE WHEN is_early_departure = 1 THEN 1 ELSE 0 END) as early_departures
-            ')
-            ->first();
-
-        $checkinStats = AttendanceLog::where('worker_id', $workerId)
-            ->where('type', 'in')
-            ->whereDate('device_time', $date)
-            ->selectRaw('
-                SUM(CASE WHEN is_late = 1 THEN 1 ELSE 0 END) as late_arrivals,
-                COUNT(*) as checkin_count
-            ')
-            ->first();
-
-        $missingCheckouts = AttendanceLog::where('worker_id', $workerId)
-            ->where('type', 'in')
-            ->whereNull('paired_log_id')
-            ->whereDate('device_time', $date)
-            ->count();
-
-        $missingCheckins = AttendanceLog::where('worker_id', $workerId)
-            ->where('type', 'out')
-            ->whereNull('paired_log_id')
-            ->whereDate('device_time', $date)
-            ->count();
-
-        $totalMinutes = (int) ($checkoutStats->total_minutes ?? 0);
-        $overtimeMinutes = (int) ($checkoutStats->overtime_minutes ?? 0);
-        $regularMinutes = max(0, $totalMinutes - $overtimeMinutes);
+        $date = $request->date('date') ?? Carbon::today();
+        $summary = $this->reportService->getDailyStats($workerId, $date);
 
         return response()->json([
-            'worker' => [
-                'id' => $worker->id,
-                'name' => $worker->name,
-            ],
+            'worker' => ['id' => $worker->id, 'name' => $worker->name],
             'period' => 'daily',
             'date' => $date->format('Y-m-d'),
-            'summary' => [
-                'total_hours' => round($totalMinutes / 60, 2),
-                'total_minutes' => $totalMinutes,
-                'regular_hours' => round($regularMinutes / 60, 2),
-                'overtime_hours' => round($overtimeMinutes / 60, 2),
-                'formatted_time' => sprintf('%d:%02d', intdiv($totalMinutes, 60), $totalMinutes % 60),
-                'late_arrivals' => (int) ($checkinStats->late_arrivals ?? 0),
-                'early_departures' => (int) ($checkoutStats->early_departures ?? 0),
-                'missing_checkouts' => $missingCheckouts,
-                'missing_checkins' => $missingCheckins,
-            ],
+            'summary' => $summary,
         ]);
     }
 
@@ -108,39 +61,15 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Worker not found'], 404);
         }
 
-        $date = $request->query('date') ? Carbon::parse($request->query('date')) : Carbon::today();
-        $weekStart = $date->copy()->startOfWeek();
-
-        $summary = WorkSummary::where('worker_id', $workerId)
-            ->where('period_type', 'weekly')
-            ->whereDate('period_start', $weekStart)
-            ->first();
-
-        if (!$summary) {
-            $summary = $this->summaryService->calculateWeekly($worker, $weekStart);
-        }
+        $date = $request->date('date') ?? Carbon::today();
+        $summary = $this->reportService->getWeeklySummary($worker, $date);
 
         return response()->json([
-            'worker' => [
-                'id' => $worker->id,
-                'name' => $worker->name,
-            ],
+            'worker' => ['id' => $worker->id, 'name' => $worker->name],
             'period' => 'weekly',
             'week_start' => $summary->period_start->format('Y-m-d'),
             'week_end' => $summary->period_end->format('Y-m-d'),
-            'summary' => [
-                'total_hours' => $summary->total_hours,
-                'total_minutes' => $summary->total_minutes,
-                'regular_hours' => $summary->regular_hours,
-                'overtime_hours' => $summary->overtime_hours,
-                'formatted_time' => $summary->formatted_total_time,
-                'days_worked' => $summary->days_worked,
-                'days_absent' => $summary->days_absent,
-                'late_arrivals' => $summary->late_arrivals,
-                'early_departures' => $summary->early_departures,
-                'missing_checkouts' => $summary->missing_checkouts,
-                'missing_checkins' => $summary->missing_checkins,
-            ],
+            'summary' => $this->reportService->formatSummaryResponse($summary),
             'calculated_at' => $summary->calculated_at?->toIso8601String(),
         ]);
     }
@@ -159,46 +88,16 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Worker not found'], 404);
         }
 
-        // Accept month parameter (YYYY-MM) or date parameter
-        if ($request->query('month')) {
-            $monthStart = Carbon::createFromFormat('Y-m', $request->query('month'))->startOfMonth();
-        } elseif ($request->query('date')) {
-            $monthStart = Carbon::parse($request->query('date'))->startOfMonth();
-        } else {
-            $monthStart = Carbon::today()->startOfMonth();
-        }
-
-        $summary = WorkSummary::where('worker_id', $workerId)
-            ->where('period_type', 'monthly')
-            ->whereDate('period_start', $monthStart)
-            ->first();
-
-        if (!$summary) {
-            $summary = $this->summaryService->calculateMonthly($worker, $monthStart);
-        }
+        $monthStart = $this->parseMonthStart($request);
+        $summary = $this->reportService->getMonthlySummary($worker, $monthStart);
 
         return response()->json([
-            'worker' => [
-                'id' => $worker->id,
-                'name' => $worker->name,
-            ],
+            'worker' => ['id' => $worker->id, 'name' => $worker->name],
             'period' => 'monthly',
             'month' => $monthStart->format('Y-m'),
             'month_start' => $summary->period_start->format('Y-m-d'),
             'month_end' => $summary->period_end->format('Y-m-d'),
-            'summary' => [
-                'total_hours' => $summary->total_hours,
-                'total_minutes' => $summary->total_minutes,
-                'regular_hours' => $summary->regular_hours,
-                'overtime_hours' => $summary->overtime_hours,
-                'formatted_time' => $summary->formatted_total_time,
-                'days_worked' => $summary->days_worked,
-                'days_absent' => $summary->days_absent,
-                'late_arrivals' => $summary->late_arrivals,
-                'early_departures' => $summary->early_departures,
-                'missing_checkouts' => $summary->missing_checkouts,
-                'missing_checkins' => $summary->missing_checkins,
-            ],
+            'summary' => $this->reportService->formatSummaryResponse($summary),
             'calculated_at' => $summary->calculated_at?->toIso8601String(),
         ]);
     }
@@ -217,39 +116,16 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Worker not found'], 404);
         }
 
-        $year = (int) $request->query('year', date('Y'));
-
-        $summary = WorkSummary::where('worker_id', $workerId)
-            ->where('period_type', 'yearly')
-            ->whereYear('period_start', $year)
-            ->first();
-
-        if (!$summary) {
-            $summary = $this->summaryService->calculateYearly($worker, $year);
-        }
+        $year = $request->integer('year', (int) date('Y'));
+        $summary = $this->reportService->getYearlySummary($worker, $year);
 
         return response()->json([
-            'worker' => [
-                'id' => $worker->id,
-                'name' => $worker->name,
-            ],
+            'worker' => ['id' => $worker->id, 'name' => $worker->name],
             'period' => 'yearly',
             'year' => $year,
             'year_start' => $summary->period_start->format('Y-m-d'),
             'year_end' => $summary->period_end->format('Y-m-d'),
-            'summary' => [
-                'total_hours' => $summary->total_hours,
-                'total_minutes' => $summary->total_minutes,
-                'regular_hours' => $summary->regular_hours,
-                'overtime_hours' => $summary->overtime_hours,
-                'formatted_time' => $summary->formatted_total_time,
-                'days_worked' => $summary->days_worked,
-                'days_absent' => $summary->days_absent,
-                'late_arrivals' => $summary->late_arrivals,
-                'early_departures' => $summary->early_departures,
-                'missing_checkouts' => $summary->missing_checkouts,
-                'missing_checkins' => $summary->missing_checkins,
-            ],
+            'summary' => $this->reportService->formatSummaryResponse($summary),
             'calculated_at' => $summary->calculated_at?->toIso8601String(),
         ]);
     }
@@ -268,51 +144,20 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Worker not found'], 404);
         }
 
-        $from = $request->query('from') ? Carbon::parse($request->query('from')) : Carbon::today()->startOfMonth();
-        $to = $request->query('to') ? Carbon::parse($request->query('to')) : Carbon::today();
+        $from = $request->date('from') ?? Carbon::today()->startOfMonth();
+        $to = $request->date('to') ?? Carbon::today();
 
-        // Get all logs in the period
-        $logs = AttendanceLog::where('worker_id', $workerId)
-            ->whereBetween('device_time', [$from->copy()->startOfDay(), $to->copy()->endOfDay()])
-            ->orderBy('device_time', 'asc')
-            ->get();
+        if ($to->isBefore($from)) {
+            return response()->json(['message' => 'End date cannot be before start date'], 422);
+        }
 
-        // Group logs by date and calculate daily summaries
-        $dailyData = $logs->groupBy(fn ($log) => $log->device_time->format('Y-m-d'))
-            ->map(function ($dayLogs, $date) {
-                $checkouts = $dayLogs->where('type', 'out')->whereNotNull('work_minutes');
-                $checkins = $dayLogs->where('type', 'in');
+        $data = $this->reportService->getWorkerLogsWithSummaries($workerId, $from, $to);
 
-                $totalMinutes = (int) $checkouts->sum('work_minutes');
-                $overtimeMinutes = (int) $checkouts->where('is_overtime', true)->sum('overtime_minutes');
-                $regularMinutes = max(0, $totalMinutes - $overtimeMinutes);
-
-                return [
-                    'date' => $date,
-                    'summary' => [
-                        'total_hours' => round($totalMinutes / 60, 2),
-                        'total_minutes' => $totalMinutes,
-                        'regular_hours' => round($regularMinutes / 60, 2),
-                        'overtime_hours' => round($overtimeMinutes / 60, 2),
-                        'formatted_time' => sprintf('%d:%02d', intdiv($totalMinutes, 60), $totalMinutes % 60),
-                        'late_arrivals' => $checkins->where('is_late', true)->count(),
-                        'early_departures' => $checkouts->where('is_early_departure', true)->count(),
-                        'missing_checkouts' => $checkins->whereNull('paired_log_id')->count(),
-                        'missing_checkins' => $dayLogs->where('type', 'out')->whereNull('paired_log_id')->count(),
-                    ],
-                    'logs' => AttendanceLogResource::collection($dayLogs->sortByDesc('device_time')->values()),
-                ];
-            })
-            ->sortByDesc('date')
-            ->values();
-
-        // Calculate period summary
-        $allCheckouts = $logs->where('type', 'out')->whereNotNull('work_minutes');
-        $allCheckins = $logs->where('type', 'in');
-
-        $periodTotalMinutes = (int) $allCheckouts->sum('work_minutes');
-        $periodOvertimeMinutes = (int) $allCheckouts->where('is_overtime', true)->sum('overtime_minutes');
-        $periodRegularMinutes = max(0, $periodTotalMinutes - $periodOvertimeMinutes);
+        // Transform daily data logs to resources
+        $dailyData = $data['daily_data']->map(function ($day) {
+            $day['logs'] = AttendanceLogResource::collection($day['logs']);
+            return $day;
+        });
 
         return response()->json([
             'worker' => [
@@ -323,20 +168,9 @@ class ReportsController extends Controller
                 'from' => $from->format('Y-m-d'),
                 'to' => $to->format('Y-m-d'),
             ],
-            'summary' => [
-                'total_hours' => round($periodTotalMinutes / 60, 2),
-                'total_minutes' => $periodTotalMinutes,
-                'regular_hours' => round($periodRegularMinutes / 60, 2),
-                'overtime_hours' => round($periodOvertimeMinutes / 60, 2),
-                'formatted_time' => sprintf('%d:%02d', intdiv($periodTotalMinutes, 60), $periodTotalMinutes % 60),
-                'days_worked' => $dailyData->count(),
-                'late_arrivals' => $allCheckins->where('is_late', true)->count(),
-                'early_departures' => $allCheckouts->where('is_early_departure', true)->count(),
-                'missing_checkouts' => $allCheckins->whereNull('paired_log_id')->count(),
-                'missing_checkins' => $logs->where('type', 'out')->whereNull('paired_log_id')->count(),
-            ],
+            'summary' => $data['period_summary'],
             'total_days' => $dailyData->count(),
-            'total_logs' => $logs->count(),
+            'total_logs' => $data['logs']->count(),
             'days' => $dailyData,
         ]);
     }
@@ -371,8 +205,8 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $date = $request->query('date') ? Carbon::parse($request->query('date')) : Carbon::today();
-        $perPage = $request->query('per_page', 50);
+        $date = $request->date('date') ?? Carbon::today();
+        $perPage = $request->integer('per_page', 50);
 
         $workers = User::where('role', 'worker')
             ->where('status', 'active')
@@ -380,54 +214,14 @@ class ReportsController extends Controller
             ->paginate($perPage);
 
         $workerIds = $workers->pluck('id')->toArray();
+        $stats = $this->reportService->getAllWorkersDailyStats($workerIds, $date);
 
-        // Aggregate check-out stats from attendance_logs
-        $checkoutStats = AttendanceLog::whereIn('worker_id', $workerIds)
-            ->where('type', 'out')
-            ->whereNotNull('work_minutes')
-            ->whereDate('device_time', $date)
-            ->selectRaw('
-                worker_id,
-                SUM(work_minutes) as total_minutes,
-                SUM(CASE WHEN is_overtime = 1 THEN overtime_minutes ELSE 0 END) as overtime_minutes,
-                SUM(CASE WHEN is_early_departure = 1 THEN 1 ELSE 0 END) as early_departures
-            ')
-            ->groupBy('worker_id')
-            ->get()
-            ->keyBy('worker_id');
-
-        // Aggregate check-in stats from attendance_logs
-        $checkinStats = AttendanceLog::whereIn('worker_id', $workerIds)
-            ->where('type', 'in')
-            ->whereDate('device_time', $date)
-            ->selectRaw('
-                worker_id,
-                SUM(CASE WHEN is_late = 1 THEN 1 ELSE 0 END) as late_arrivals
-            ')
-            ->groupBy('worker_id')
-            ->get()
-            ->keyBy('worker_id');
-
-        $result = $workers->getCollection()->map(function ($worker) use ($checkoutStats, $checkinStats) {
-            $checkout = $checkoutStats->get($worker->id);
-            $checkin = $checkinStats->get($worker->id);
-
-            $totalMinutes = (int) ($checkout->total_minutes ?? 0);
-            $overtimeMinutes = (int) ($checkout->overtime_minutes ?? 0);
-            $regularMinutes = max(0, $totalMinutes - $overtimeMinutes);
-
-            return [
-                'id' => $worker->id,
-                'name' => $worker->name,
-                'employee_id' => $worker->employee_id,
-                'total_hours' => round($totalMinutes / 60, 2),
-                'total_minutes' => $totalMinutes,
-                'regular_hours' => round($regularMinutes / 60, 2),
-                'overtime_hours' => round($overtimeMinutes / 60, 2),
-                'formatted_time' => sprintf('%d:%02d', intdiv($totalMinutes, 60), $totalMinutes % 60),
-                'late_arrivals' => (int) ($checkin->late_arrivals ?? 0),
-                'early_departures' => (int) ($checkout->early_departures ?? 0),
-            ];
+        $result = $workers->getCollection()->map(function ($worker) use ($stats) {
+            return $this->reportService->formatWorkerStats(
+                $worker,
+                $stats['checkout_stats']->get($worker->id),
+                $stats['checkin_stats']->get($worker->id)
+            );
         });
 
         return response()->json([
@@ -449,9 +243,9 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $date = $request->query('date') ? Carbon::parse($request->query('date')) : Carbon::today();
+        $date = $request->date('date') ?? Carbon::today();
         $weekStart = $date->copy()->startOfWeek();
-        $perPage = $request->query('per_page', 50);
+        $perPage = $request->integer('per_page', 50);
 
         $workers = User::where('role', 'worker')
             ->where('status', 'active')
@@ -507,15 +301,8 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // Accept month parameter (YYYY-MM) or date parameter
-        if ($request->query('month')) {
-            $monthStart = Carbon::createFromFormat('Y-m', $request->query('month'))->startOfMonth();
-        } elseif ($request->query('date')) {
-            $monthStart = Carbon::parse($request->query('date'))->startOfMonth();
-        } else {
-            $monthStart = Carbon::today()->startOfMonth();
-        }
-        $perPage = $request->query('per_page', 50);
+        $monthStart = $this->parseMonthStart($request);
+        $perPage = $request->integer('per_page', 50);
 
         $workers = User::where('role', 'worker')
             ->where('status', 'active')
@@ -573,8 +360,8 @@ class ReportsController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $year = $request->query('year', date('Y'));
-        $perPage = $request->query('per_page', 50);
+        $year = $request->integer('year', (int) date('Y'));
+        $perPage = $request->integer('per_page', 50);
         $calculate = $request->boolean('calculate', false);
 
         // Get all active workers
@@ -754,5 +541,25 @@ class ReportsController extends Controller
 
         // Workers can only view their own reports
         return $user->id === $workerId;
+    }
+
+    /**
+     * Parse month start from request (accepts 'month' as YYYY-MM or 'date' as Y-m-d).
+     */
+    private function parseMonthStart(Request $request): Carbon
+    {
+        if ($month = $request->query('month')) {
+            try {
+                return Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+            } catch (\Exception) {
+                // Fall through to default
+            }
+        }
+
+        if ($date = $request->date('date')) {
+            return $date->startOfMonth();
+        }
+
+        return Carbon::today()->startOfMonth();
     }
 }
