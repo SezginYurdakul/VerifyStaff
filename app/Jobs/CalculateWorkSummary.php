@@ -10,6 +10,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class CalculateWorkSummary implements ShouldQueue
 {
@@ -28,7 +30,12 @@ class CalculateWorkSummary implements ShouldQueue
     {
         $worker = User::find($this->workerId);
 
-        if (! $worker) {
+        if (!$worker) {
+            Log::warning('CalculateWorkSummary: Worker not found', [
+                'worker_id' => $this->workerId,
+                'date' => $this->date,
+                'period_type' => $this->periodType,
+            ]);
             return;
         }
 
@@ -40,6 +47,26 @@ class CalculateWorkSummary implements ShouldQueue
             'yearly' => $service->calculateYearly($worker, $date->year),
             default => null, // daily no longer supported
         };
+
+        Log::info('CalculateWorkSummary: Completed', [
+            'worker_id' => $this->workerId,
+            'date' => $this->date,
+            'period_type' => $this->periodType,
+        ]);
+    }
+
+    /**
+     * Handle a job failure.
+     */
+    public function failed(?Throwable $exception): void
+    {
+        Log::error('CalculateWorkSummary: Job failed permanently', [
+            'worker_id' => $this->workerId,
+            'date' => $this->date,
+            'period_type' => $this->periodType,
+            'error' => $exception?->getMessage(),
+            'trace' => $exception?->getTraceAsString(),
+        ]);
     }
 
     public function tags(): array

@@ -32,11 +32,16 @@ class ProcessAttendanceSync implements ShouldQueue
 
         DB::transaction(function () use (&$processedWorkers, $syncTime) {
             foreach ($this->logs as $logData) {
+                $deviceTime = Carbon::parse($logData['device_time']);
+
+                // Auto-detect type if not provided (toggle mode)
+                $type = $logData['type'] ?? $this->detectAttendanceType($logData['worker_id'], $deviceTime);
+
                 $eventId = AttendanceLog::generateEventId(
                     $logData['worker_id'],
                     $this->repId,
                     $logData['device_time'],
-                    $logData['type']
+                    $type
                 );
 
                 // Skip if already exists (idempotent)
@@ -44,8 +49,6 @@ class ProcessAttendanceSync implements ShouldQueue
                     Log::info('Duplicate attendance log skipped', ['event_id' => $eventId]);
                     continue;
                 }
-
-                $deviceTime = Carbon::parse($logData['device_time']);
 
                 // Check for anomalies
                 $flagged = false;
@@ -59,7 +62,7 @@ class ProcessAttendanceSync implements ShouldQueue
 
                 // Check for duplicate scan (same worker, same type, within 5 minutes)
                 $recentScan = AttendanceLog::where('worker_id', $logData['worker_id'])
-                    ->where('type', $logData['type'])
+                    ->where('type', $type)
                     ->whereBetween('device_time', [
                         $deviceTime->copy()->subMinutes(5),
                         $deviceTime->copy()->addMinutes(5)
@@ -75,7 +78,7 @@ class ProcessAttendanceSync implements ShouldQueue
                     'event_id' => $eventId,
                     'worker_id' => $logData['worker_id'],
                     'rep_id' => $this->repId,
-                    'type' => $logData['type'],
+                    'type' => $type,
                     'device_time' => $deviceTime,
                     'device_timezone' => $logData['device_timezone'] ?? 'UTC',
                     'sync_time' => $syncTime,
@@ -115,5 +118,28 @@ class ProcessAttendanceSync implements ShouldQueue
             'logs_count' => count($this->logs),
             'error' => $exception->getMessage(),
         ]);
+    }
+
+    /**
+     * Detect attendance type based on worker's last log.
+     * Toggle mode: if last log was 'in', return 'out' and vice versa.
+     * Supports night shifts (check-in on day X, check-out on day X+1).
+     */
+    private function detectAttendanceType(int $workerId, Carbon $deviceTime): string
+    {
+        // Get the most recent log for this worker (last 24 hours to support night shifts)
+        $lastLog = AttendanceLog::where('worker_id', $workerId)
+            ->where('device_time', '>=', $deviceTime->copy()->subHours(24))
+            ->where('device_time', '<', $deviceTime)
+            ->orderBy('device_time', 'desc')
+            ->first();
+
+        // If no recent log or last was 'out', this should be 'in'
+        // If last was 'in' (still open), this should be 'out'
+        if (!$lastLog || $lastLog->type === 'out') {
+            return 'in';
+        }
+
+        return 'out';
     }
 }

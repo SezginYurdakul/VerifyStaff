@@ -10,6 +10,7 @@ use App\Jobs\ProcessAttendanceSync;
 use App\Models\AttendanceLog;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -50,6 +51,14 @@ class SyncController extends Controller
             ], 403);
         }
 
+        // Check if representative mode is enabled
+        if (Setting::isKioskMode()) {
+            return response()->json([
+                'message' => 'System is in kiosk mode. Representative sync is disabled.',
+                'attendance_mode' => 'kiosk',
+            ], 403);
+        }
+
         $logs = $request->validated('logs');
         $async = $request->boolean('async', false);
 
@@ -64,6 +73,11 @@ class SyncController extends Controller
     private function syncLogsAsync(array $logs, User $user): JsonResponse
     {
         ProcessAttendanceSync::dispatch($logs, $user->id);
+
+        // Log sync operation
+        AuditLogger::sync('async_queued', $user->id, [
+            'log_count' => count($logs),
+        ]);
 
         return response()->json([
             'message' => 'Logs queued for processing',
@@ -88,20 +102,6 @@ class SyncController extends Controller
         $duplicateScanWindow = $config['duplicate_scan_window_minutes'];
 
         foreach ($logs as $log) {
-            $eventId = AttendanceLog::generateEventId(
-                $log['worker_id'],
-                $user->id,
-                $log['device_time'],
-                $log['type']
-            );
-
-            $existing = AttendanceLog::where('event_id', $eventId)->first();
-
-            if ($existing) {
-                $duplicates[] = $eventId;
-                continue;
-            }
-
             $worker = User::where('id', $log['worker_id'])
                 ->where('role', 'worker')
                 ->first();
@@ -115,6 +115,24 @@ class SyncController extends Controller
             }
 
             $deviceTime = Carbon::parse($log['device_time']);
+
+            // Auto-detect type if not provided (toggle mode)
+            $type = $log['type'] ?? $this->detectAttendanceType($log['worker_id'], $deviceTime);
+
+            $eventId = AttendanceLog::generateEventId(
+                $log['worker_id'],
+                $user->id,
+                $log['device_time'],
+                $type
+            );
+
+            $existing = AttendanceLog::where('event_id', $eventId)->first();
+
+            if ($existing) {
+                $duplicates[] = $eventId;
+                continue;
+            }
+
             $flagged = false;
             $flagReason = null;
 
@@ -125,7 +143,7 @@ class SyncController extends Controller
 
             // Check for duplicate scan within configured window
             $recentScan = AttendanceLog::where('worker_id', $log['worker_id'])
-                ->where('type', $log['type'])
+                ->where('type', $type)
                 ->whereBetween('device_time', [
                     $deviceTime->copy()->subMinutes($duplicateScanWindow),
                     $deviceTime->copy()->addMinutes($duplicateScanWindow)
@@ -141,7 +159,7 @@ class SyncController extends Controller
                 'event_id' => $eventId,
                 'worker_id' => $log['worker_id'],
                 'rep_id' => $user->id,
-                'type' => $log['type'],
+                'type' => $type,
                 'device_time' => $deviceTime,
                 'device_timezone' => $log['device_timezone'] ?? 'UTC',
                 'sync_time' => now(),
@@ -155,12 +173,12 @@ class SyncController extends Controller
             ];
 
             // Calculate fields based on type
-            if ($log['type'] === 'in') {
+            if ($type === 'in') {
                 // Check for late arrival using settings
                 $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workStartTime);
                 $graceEnd = $expectedStart->copy()->addMinutes($lateThresholdMinutes);
                 $logData['is_late'] = $deviceTime->gt($graceEnd);
-            } elseif ($log['type'] === 'out') {
+            } elseif ($type === 'out') {
                 // Find matching check-in (unpaired, same day, before this check-out)
                 $checkIn = AttendanceLog::where('worker_id', $log['worker_id'])
                     ->where('type', 'in')
@@ -194,12 +212,19 @@ class SyncController extends Controller
             $attendanceLog = AttendanceLog::create($logData);
 
             // If this is a check-out with a paired check-in, update the check-in's paired_log_id
-            if ($log['type'] === 'out' && isset($checkIn)) {
+            if ($type === 'out' && isset($checkIn)) {
                 $checkIn->update(['paired_log_id' => $attendanceLog->id]);
             }
 
             $synced[] = new AttendanceLogResource($attendanceLog);
         }
+
+        // Log sync operation
+        AuditLogger::sync('sync_completed', $user->id, [
+            'synced_count' => count($synced),
+            'duplicate_count' => count($duplicates),
+            'error_count' => count($errors),
+        ]);
 
         return response()->json([
             'message' => 'Logs processed successfully',
@@ -219,5 +244,28 @@ class SyncController extends Controller
             'server_time' => now()->toIso8601String(),
             'timestamp' => now()->timestamp,
         ]);
+    }
+
+    /**
+     * Detect attendance type based on worker's last log.
+     * Toggle mode: if last log was 'in', return 'out' and vice versa.
+     * Supports night shifts (check-in on day X, check-out on day X+1).
+     */
+    private function detectAttendanceType(int $workerId, Carbon $deviceTime): string
+    {
+        // Get the most recent log for this worker (last 24 hours to support night shifts)
+        $lastLog = AttendanceLog::where('worker_id', $workerId)
+            ->where('device_time', '>=', $deviceTime->copy()->subHours(24))
+            ->where('device_time', '<', $deviceTime)
+            ->orderBy('device_time', 'desc')
+            ->first();
+
+        // If no recent log or last was 'out', this should be 'in'
+        // If last was 'in' (still open), this should be 'out'
+        if (!$lastLog || $lastLog->type === 'out') {
+            return 'in';
+        }
+
+        return 'out';
     }
 }

@@ -16,7 +16,7 @@ class SyncLogsRequest extends FormRequest
         return [
             'logs' => ['required', 'array', 'min:1'],
             'logs.*.worker_id' => ['required', 'integer'],
-            'logs.*.type' => ['required', 'in:in,out'],
+            'logs.*.type' => ['sometimes', 'nullable', 'in:in,out'],  // Optional - auto-detected if not provided
             'logs.*.device_time' => ['required', 'date'],
             'logs.*.device_timezone' => ['sometimes', 'string', 'max:50'],
             'logs.*.sync_attempt' => ['sometimes', 'integer', 'min:1'],
@@ -31,8 +31,7 @@ class SyncLogsRequest extends FormRequest
         return [
             'logs.required' => 'At least one attendance log is required.',
             'logs.*.worker_id.required' => 'Worker ID is required for each log.',
-            'logs.*.type.required' => 'Attendance type (in/out) is required.',
-            'logs.*.type.in' => 'Attendance type must be either "in" or "out".',
+            'logs.*.type.in' => 'Attendance type must be either "in" or "out" (or omit for auto-detection).',
             'logs.*.device_time.required' => 'Device time is required for each log.',
         ];
     }
