@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\KioskController;
 use App\Http\Controllers\Api\V1\ReportsController;
 use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\SyncController;
@@ -13,6 +15,9 @@ Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::get('time', [SyncController::class, 'getServerTime']);
 
+    // Kiosk - public endpoint for kiosk device to generate QR code
+    Route::get('kiosk/{kioskCode}/code', [KioskController::class, 'generateCode']);
+
     // Protected routes
     Route::middleware('auth:sanctum')->group(function () {
         // Auth
@@ -20,9 +25,13 @@ Route::prefix('v1')->group(function () {
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::post('auth/refresh', [AuthController::class, 'refreshToken']);
 
-        // Sync - for representatives
+        // Sync - for representatives (only works in representative mode)
         Route::get('sync/staff', [SyncController::class, 'getStaffList']);
         Route::post('sync/logs', [SyncController::class, 'syncLogs']);
+
+        // Attendance - for workers (kiosk mode)
+        Route::post('attendance/self-check', [AttendanceController::class, 'selfCheck']);
+        Route::get('attendance/status', [AttendanceController::class, 'status']);
 
         // TOTP
         Route::get('totp/generate', [TotpController::class, 'generateCode']);
@@ -57,5 +66,12 @@ Route::prefix('v1')->group(function () {
         Route::put('settings/config/shifts', [SettingsController::class, 'updateShifts']);
         Route::put('settings/config/working-days', [SettingsController::class, 'updateWorkingDays']);
         Route::put('settings/config/attendance-mode', [SettingsController::class, 'updateAttendanceMode']);
+
+        // Kiosk management - Admin only
+        Route::get('kiosks', [KioskController::class, 'index']);
+        Route::post('kiosks', [KioskController::class, 'store']);
+        Route::get('kiosks/{kioskCode}', [KioskController::class, 'show']);
+        Route::put('kiosks/{kioskCode}', [KioskController::class, 'update']);
+        Route::post('kiosks/{kioskCode}/regenerate-token', [KioskController::class, 'regenerateToken']);
     });
 });
