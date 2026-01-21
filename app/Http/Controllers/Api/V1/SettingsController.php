@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\SettingChanged;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\UpdateAttendanceModeRequest;
 use App\Http\Requests\Api\UpdateBulkSettingsRequest;
@@ -117,10 +118,14 @@ class SettingsController extends Controller
             ], 422);
         }
 
+        $oldValue = $this->castValue($setting->value, $setting->type);
         $stringValue = $this->valueToString($value, $setting->type);
         $setting->update(['value' => $stringValue]);
 
         Setting::clearCache();
+
+        // Dispatch event for logging
+        SettingChanged::dispatch($key, $oldValue, $value, $request->user());
 
         return response()->json([
             'message' => 'Setting updated successfully',
@@ -158,8 +163,12 @@ class SettingsController extends Controller
                 continue;
             }
 
+            $oldValue = $this->castValue($setting->value, $setting->type);
             $stringValue = $this->valueToString($item['value'], $setting->type);
             $setting->update(['value' => $stringValue]);
+
+            // Dispatch event for logging
+            SettingChanged::dispatch($item['key'], $oldValue, $item['value'], $request->user());
 
             $updated[] = [
                 'key' => $setting->key,
@@ -203,7 +212,13 @@ class SettingsController extends Controller
      */
     public function updateShifts(UpdateShiftsRequest $request): JsonResponse
     {
-        Setting::setValue('shifts', $request->validated('shifts'));
+        $oldShifts = Setting::getValue('shifts');
+        $newShifts = $request->validated('shifts');
+
+        Setting::setValue('shifts', $newShifts);
+
+        // Dispatch event for logging
+        SettingChanged::dispatch('shifts', $oldShifts, $newShifts, $request->user());
 
         return response()->json([
             'message' => 'Shifts updated successfully',
@@ -216,12 +231,16 @@ class SettingsController extends Controller
      */
     public function updateWorkingDays(UpdateWorkingDaysRequest $request): JsonResponse
     {
+        $oldWorkingDays = Setting::getValue('working_days');
         $workingDays = $request->validated('working_days');
         $allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
         $weekendDays = array_values(array_diff($allDays, $workingDays));
 
         Setting::setValue('working_days', $workingDays);
         Setting::setValue('weekend_days', $weekendDays);
+
+        // Dispatch event for logging
+        SettingChanged::dispatch('working_days', $oldWorkingDays, $workingDays, $request->user());
 
         return response()->json([
             'message' => 'Working days updated successfully',
@@ -254,7 +273,13 @@ class SettingsController extends Controller
      */
     public function updateAttendanceMode(UpdateAttendanceModeRequest $request): JsonResponse
     {
-        Setting::setValue('attendance_mode', $request->validated('attendance_mode'));
+        $oldMode = Setting::getAttendanceMode();
+        $newMode = $request->validated('attendance_mode');
+
+        Setting::setValue('attendance_mode', $newMode);
+
+        // Dispatch event for logging
+        SettingChanged::dispatch('attendance_mode', $oldMode, $newMode, $request->user());
 
         return response()->json([
             'message' => 'Attendance mode updated successfully',

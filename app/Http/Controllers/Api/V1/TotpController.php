@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\TotpVerified;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\VerifyTotpRequest;
 use App\Models\User;
@@ -63,6 +64,9 @@ class TotpController extends Controller
         }
 
         $isValid = $this->totpService->verifyCode($worker->secret_token, $request->validated('code'));
+
+        // Dispatch event for logging
+        TotpVerified::dispatch($worker, $isValid, $request->user());
 
         return response()->json([
             'valid' => $isValid,
