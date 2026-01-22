@@ -1,59 +1,274 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# VerifyStaff
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Offline-first attendance tracking system built with Laravel 11 and React PWA.
 
-## About Laravel
+## Overview
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+VerifyStaff is a lightweight, high-reliability attendance tracking solution designed for environments with unstable or no internet connection. It eliminates the need for expensive biometric hardware by using a secure, peer-to-peer QR scanning model with TOTP (Time-based One-Time Password) technology.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Dual Attendance Modes**
+  - **Representative Mode**: Workers show QR codes, representatives scan them
+  - **Kiosk Mode**: Fixed kiosks display QR codes, workers scan them
 
-## Learning Laravel
+- **Offline-First Design**
+  - Works without internet connection
+  - Automatic sync when connection is restored
+  - Local validation using cached staff data
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- **Security**
+  - TOTP-based QR codes (30-second validity)
+  - SHA256-based event deduplication
+  - Token-based authentication (Laravel Sanctum)
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- **Comprehensive Reporting**
+  - Daily/Weekly/Monthly/Yearly summaries
+  - Late arrivals and early departures tracking
+  - Overtime calculations
+  - Anomaly flagging system
 
-## Laravel Sponsors
+## Tech Stack
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+| Component | Technology |
+|-----------|------------|
+| Backend | Laravel 11 (PHP 8.3+) |
+| Frontend | React (Vite PWA) |
+| Database | MySQL 8.0 |
+| Offline Storage | IndexedDB (Dexie.js) |
+| Authentication | Laravel Sanctum |
+| Security | TOTP Algorithm |
 
-### Premium Partners
+## Requirements
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+- PHP 8.3+
+- Composer
+- MySQL 8.0+
+- Node.js 20+ (for frontend)
+- Docker & Docker Compose (optional)
 
-## Contributing
+## Installation
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### Using Docker (Recommended)
 
-## Code of Conduct
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/verifystaff.git
+cd verifystaff
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+# Copy environment file
+cp .env.example .env
 
-## Security Vulnerabilities
+# Start containers
+docker-compose up -d
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+# Install dependencies
+docker-compose exec app composer install
+
+# Generate application key
+docker-compose exec app php artisan key:generate
+
+# Run migrations
+docker-compose exec app php artisan migrate
+
+# Access the application
+# API: http://localhost:8000
+```
+
+### Manual Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/verifystaff.git
+cd verifystaff
+
+# Install PHP dependencies
+composer install
+
+# Copy environment file
+cp .env.example .env
+
+# Configure your database in .env
+# DB_CONNECTION=mysql
+# DB_HOST=127.0.0.1
+# DB_PORT=3306
+# DB_DATABASE=verifystaff
+# DB_USERNAME=your_username
+# DB_PASSWORD=your_password
+
+# Generate application key
+php artisan key:generate
+
+# Run migrations (includes default settings)
+php artisan migrate
+
+# Start the development server
+php artisan serve
+```
+
+## API Endpoints
+
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/auth/register` | Register new user |
+| POST | `/api/v1/auth/login` | Login |
+| POST | `/api/v1/auth/logout` | Logout |
+| GET | `/api/v1/auth/me` | Get current user |
+| POST | `/api/v1/auth/refresh` | Refresh token |
+
+### Sync (Representative Mode)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/sync/staff` | Get staff list |
+| POST | `/api/v1/sync/logs` | Upload attendance logs |
+| GET | `/api/v1/time` | Get server time |
+
+### Attendance (Kiosk Mode)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/attendance/self-check` | Self check-in/out |
+| GET | `/api/v1/attendance/status` | Get attendance status |
+
+### TOTP
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/totp/generate` | Generate TOTP code |
+| POST | `/api/v1/totp/verify` | Verify TOTP code |
+
+### Reports
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/reports/summary/{id}/daily` | Daily summary |
+| GET | `/api/v1/reports/summary/{id}/weekly` | Weekly summary |
+| GET | `/api/v1/reports/summary/{id}/monthly` | Monthly summary |
+| GET | `/api/v1/reports/summary/{id}/yearly` | Yearly summary |
+| GET | `/api/v1/reports/all/{period}` | All workers summary |
+| GET | `/api/v1/reports/flagged` | Flagged logs |
+
+### Settings (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/settings` | List settings |
+| PUT | `/api/v1/settings/{key}` | Update setting |
+| GET | `/api/v1/settings/work-hours` | Get work hours |
+| PUT | `/api/v1/settings/config/attendance-mode` | Change mode |
+
+### Kiosks (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/kiosks` | List kiosks |
+| POST | `/api/v1/kiosks` | Create kiosk |
+| GET | `/api/v1/kiosk/{code}/code` | Get kiosk QR code |
+
+## Testing
+
+The project includes comprehensive test coverage with 258 tests.
+
+```bash
+# Run all tests
+php artisan test
+
+# Run unit tests only
+php artisan test --testsuite=Unit
+
+# Run feature tests only
+php artisan test --testsuite=Feature
+
+# Run with coverage
+php artisan test --coverage
+```
+
+### Test Performance
+
+Tests run in ~1.5 seconds using optimized configuration:
+- In-memory SQLite database
+- Reduced bcrypt rounds
+- Array drivers for cache/session/queue
+
+See [docs/TESTING.md](docs/TESTING.md) for testing strategy documentation.
+See [docs/HIGH_PERFORMANCE_TESTING.md](docs/HIGH_PERFORMANCE_TESTING.md) for performance optimization guide.
+
+## Project Structure
+
+```
+app/
+├── Console/Commands/      # Artisan commands
+├── Events/                # Application events
+├── Exceptions/            # Custom exceptions
+├── Http/
+│   ├── Controllers/Api/V1/  # API controllers
+│   ├── Requests/Api/        # Form requests
+│   └── Resources/           # API resources
+├── Jobs/                  # Queue jobs
+├── Listeners/             # Event listeners
+├── Models/                # Eloquent models
+├── Observers/             # Model observers
+├── Providers/             # Service providers
+└── Services/              # Business logic services
+
+database/
+├── factories/             # Model factories
+├── migrations/            # Database migrations
+└── seeders/               # Database seeders
+
+tests/
+├── Feature/Api/           # API feature tests
+└── Unit/                  # Unit tests
+    ├── Events/
+    ├── Exceptions/
+    ├── Models/
+    ├── Requests/
+    ├── Resources/
+    └── Services/
+```
+
+## Configuration
+
+### Default Settings (seeded via migration)
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| work_start_time | 09:00 | Work day start |
+| work_end_time | 18:00 | Work day end |
+| break_duration_minutes | 60 | Break duration |
+| late_threshold_minutes | 15 | Grace period for late arrival |
+| attendance_mode | representative | Default attendance mode |
+| timezone | Europe/Istanbul | System timezone |
+
+### Environment Variables
+
+```env
+# Application
+APP_ENV=production
+APP_DEBUG=false
+
+# Database
+DB_CONNECTION=mysql
+DB_DATABASE=verifystaff
+
+# Security
+BCRYPT_ROUNDS=12
+
+# Services
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+```
+
+## User Roles
+
+| Role | Permissions |
+|------|-------------|
+| **Admin** | Full access to all features, settings, and reports |
+| **Representative** | Scan workers, sync logs, view assigned reports |
+| **Worker** | Generate TOTP codes, self check-in (kiosk mode) |
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+This project is proprietary software.
+
+## Documentation
+
+- [Testing Strategy](docs/TESTING.md)
+- [High Performance Testing](docs/HIGH_PERFORMANCE_TESTING.md)
+- [Project Plan](ProjectPlan.md)
