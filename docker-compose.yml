@@ -96,7 +96,7 @@ services:
     volumes:
       - ./frontend:/var/www/frontend
     ports:
-      - "5173:5173"
+      - "5174:5173"
     networks:
       - verifystaff_network
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
