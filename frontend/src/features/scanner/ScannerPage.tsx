@@ -5,7 +5,7 @@ import { verifyTotpCode } from '@/api/totp';
 import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
 import { addPendingLog, getStaffByToken, getLogCount } from '@/lib/db';
-import { Card, Button } from '@/components/ui';
+import { Card, Button, SyncStatusBadge } from '@/components/ui';
 import type { Staff } from '@/types';
 
 type ScanResult = {
@@ -13,6 +13,7 @@ type ScanResult = {
   worker?: Staff;
   message: string;
   type?: 'in' | 'out';
+  isProvisional?: boolean;
 };
 
 export default function ScannerPage() {
@@ -50,7 +51,7 @@ export default function ScannerPage() {
   });
 
   // Handle successful scan
-  const handleSuccessfulScan = async (worker: Staff, type: 'in' | 'out') => {
+  const handleSuccessfulScan = async (worker: Staff, type: 'in' | 'out', provisional: boolean = false) => {
     // Create attendance log
     const eventId = generateEventId(worker.id, user!.id, type);
     const now = new Date();
@@ -86,6 +87,7 @@ export default function ScannerPage() {
       worker,
       message: `${worker.name} checked ${type}`,
       type,
+      isProvisional: provisional,
     });
     triggerFeedback(true);
   };
@@ -153,7 +155,8 @@ export default function ScannerPage() {
           // Offline: validate locally using cached staff data
           const worker = await getStaffByToken(code);
           if (worker && worker.status === 'active') {
-            handleSuccessfulScan(worker, 'in'); // TODO: toggle in/out
+            // Mark as provisional since it's offline and will sync later
+            handleSuccessfulScan(worker, 'in', true); // TODO: toggle in/out
           } else {
             setLastResult({
               success: false,
@@ -282,17 +285,27 @@ export default function ScannerPage() {
             >
               {lastResult.success ? '✓' : '✗'}
             </div>
-            <div>
-              <div
-                className={`font-semibold ${
-                  lastResult.success ? 'text-green-800' : 'text-red-800'
-                }`}
-              >
-                {lastResult.message}
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`font-semibold ${
+                    lastResult.success ? 'text-green-800' : 'text-red-800'
+                  }`}
+                >
+                  {lastResult.message}
+                </span>
+                {lastResult.isProvisional && (
+                  <SyncStatusBadge isProvisional size="sm" />
+                )}
               </div>
               {lastResult.worker && (
                 <div className="text-sm text-gray-600">
                   Worker ID: {lastResult.worker.id}
+                </div>
+              )}
+              {lastResult.isProvisional && (
+                <div className="text-xs text-amber-700 mt-1">
+                  Will sync when online
                 </div>
               )}
             </div>
