@@ -12,7 +12,7 @@ class TotpServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->totpService = new TotpService();
+        $this->totpService = new TotpService(30);
     }
 
     public function test_generate_code_returns_six_digit_code(): void
@@ -172,5 +172,29 @@ class TotpServiceTest extends TestCase
 
         // Should accept the code (window = 1 means ±1 time period)
         $this->assertTrue($this->totpService->verifyCode($secretToken, $generated['code']));
+    }
+
+    public function test_generate_code_for_kiosk_returns_correct_structure(): void
+    {
+        $secretToken = 'kiosk-test-token';
+        $result = $this->totpService->generateCodeForKiosk($secretToken);
+
+        $this->assertArrayHasKey('code', $result);
+        $this->assertArrayHasKey('expires_at', $result);
+        $this->assertArrayHasKey('remaining_seconds', $result);
+        $this->assertArrayHasKey('qr_data', $result);
+        
+        // Verify QR data decodes correctly
+        $decodedQr = json_decode(base64_decode($result['qr_data']), true);
+        $this->assertEquals($result['code'], $decodedQr['code']);
+    }
+
+    public function test_kiosk_time_step_falls_within_valid_range(): void
+    {
+        // Verify that the kiosk time step is between 15 and 60 seconds
+        $kioskStep = $this->totpService->getKioskTimeStep();
+        
+        $this->assertGreaterThanOrEqual(15, $kioskStep);
+        $this->assertLessThanOrEqual(60, $kioskStep);
     }
 }

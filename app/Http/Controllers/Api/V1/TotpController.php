@@ -38,6 +38,7 @@ class TotpController extends Controller
             'code' => $result['code'],
             'expires_at' => $result['expires_at'],
             'remaining_seconds' => $result['remaining_seconds'],
+            'refresh_seconds' => $this->totpService->getTimeStep(),
             'qr_data' => $result['qr_data'],
         ]);
     }

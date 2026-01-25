@@ -47,8 +47,8 @@ class KioskController extends Controller
         // Update heartbeat
         $kiosk->heartbeat();
 
-        // Generate TOTP code using kiosk's secret token
-        $result = $this->totpService->generateCode($kiosk->secret_token);
+        // Generate TOTP code using kiosk's secret token with kiosk-specific time step
+        $result = $this->totpService->generateCodeForKiosk($kiosk->secret_token);
 
         // Create QR data that worker's app will scan
         $qrData = json_encode([
@@ -65,6 +65,7 @@ class KioskController extends Controller
             'totp_code' => $result['code'],
             'expires_at' => $result['expires_at'],
             'remaining_seconds' => $result['remaining_seconds'],
+            'refresh_seconds' => $this->totpService->getKioskTimeStep(),
             'qr_data' => base64_encode($qrData),
         ]);
     }

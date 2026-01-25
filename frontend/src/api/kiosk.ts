@@ -7,6 +7,7 @@ export async function getKioskCode(kioskCode: string): Promise<{
   kiosk_code: string;
   expires_at: string;
   remaining_seconds: number;
+  refresh_seconds: number;
 }> {
   const response = await api.get(`/kiosk/${kioskCode}/code`);
   return response.data;
@@ -48,4 +49,32 @@ export async function updateKiosk(
 export async function regenerateKioskToken(kioskCode: string): Promise<Kiosk> {
   const response = await api.post<{ kiosk: Kiosk }>(`/kiosks/${kioskCode}/regenerate-token`);
   return response.data.kiosk;
+}
+
+// Worker: Check-in/check-out via kiosk QR code
+export async function kioskCheckIn(
+  kioskCode: string,
+  totpCode: string
+): Promise<{
+  action: "check_in" | "check_out";
+  time: string;
+}> {
+  const deviceTime = new Date().toISOString();
+  const deviceTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const response = await api.post<{
+    message: string;
+    type: "in" | "out";
+    device_time: string;
+  }>("/attendance/self-check", {
+    device_time: deviceTime,
+    device_timezone: deviceTimezone,
+    kiosk_code: kioskCode,
+    kiosk_totp: totpCode,
+  });
+
+  return {
+    action: response.data.type === "in" ? "check_in" : "check_out",
+    time: response.data.device_time,
+  };
 }
