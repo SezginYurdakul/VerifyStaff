@@ -11,10 +11,17 @@ export default function HomePage() {
     worker: [
       {
         title: 'Show My QR Code',
-        description: 'Display your QR code for attendance check-in',
+        description: 'Display your QR code for representative check-in',
         path: '/qr',
         icon: '📱',
         color: 'bg-blue-500',
+      },
+      {
+        title: 'Kiosk Check-in',
+        description: 'Scan a kiosk QR code to check in/out',
+        path: '/kiosk-scan',
+        icon: '🖥️',
+        color: 'bg-purple-500',
       },
     ],
     representative: [
@@ -36,10 +43,24 @@ export default function HomePage() {
       },
       {
         title: 'Show My QR Code',
-        description: 'Display your QR code for attendance check-in',
+        description: 'Display your QR code for representative check-in',
         path: '/qr',
         icon: '📱',
         color: 'bg-blue-500',
+      },
+      {
+        title: 'Kiosk Check-in',
+        description: 'Scan a kiosk QR code to check in/out',
+        path: '/kiosk-scan',
+        icon: '🖥️',
+        color: 'bg-purple-500',
+      },
+      {
+        title: 'Settings',
+        description: 'Manage system configuration and kiosks',
+        path: '/settings',
+        icon: '⚙️',
+        color: 'bg-gray-500',
       },
     ],
   };

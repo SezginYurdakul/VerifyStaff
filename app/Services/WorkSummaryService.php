@@ -11,6 +11,17 @@ use Carbon\CarbonPeriod;
 
 class WorkSummaryService
 {
+    /**
+     * Calculate daily summary from attendance_logs.
+     */
+    public function calculateDaily(User $worker, Carbon $date): WorkSummary
+    {
+    $startOfDay = $date->copy()->startOfDay();
+    $endOfDay = $date->copy()->endOfDay();
+    $summary = $this->aggregateFromAttendanceLogs($worker, $startOfDay, $endOfDay);
+
+    return $this->saveSummary($worker, 'daily', $startOfDay, $endOfDay, $summary);
+}
 
     /**
      * Calculate weekly summary from attendance_logs.

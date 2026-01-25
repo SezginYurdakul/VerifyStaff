@@ -3,3 +3,4 @@ export * from './sync';
 export * from './totp';
 export * from './attendance';
 export * from './kiosk';
+export * from './settings';

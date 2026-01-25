@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\AttendanceLog;
 use App\Services\AuditLogger;
+use Illuminate\Support\Facades\Auth;
 
 class AttendanceLogObserver
 {
@@ -47,7 +48,7 @@ class AttendanceLogObserver
                     'changes' => array_intersect_key($changes, array_flip($significantFields)),
                     'original' => array_intersect_key($log->getOriginal(), array_flip($significantFields)),
                 ],
-                performedBy: auth()->id()
+                performedBy: Auth::id()
             );
         }
     }
@@ -65,7 +66,7 @@ class AttendanceLogObserver
                 'type' => $log->type,
                 'device_time' => $log->device_time?->toIso8601String(),
             ],
-            performedBy: auth()->id()
+            performedBy: Auth::id()
         );
     }
 }

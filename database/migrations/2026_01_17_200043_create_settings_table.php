@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -168,6 +169,24 @@ return new class extends Migration
 
             // General Settings
             [
+                'key' => 'totp_refresh_seconds',
+                'group' => 'general',
+                'value' => '30',
+                'type' => 'integer',
+                'description' => 'TOTP code refresh interval in seconds for worker QR codes (15-60)',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'key' => 'kiosk_totp_refresh_seconds',
+                'group' => 'general',
+                'value' => '30',
+                'type' => 'integer',
+                'description' => 'TOTP code refresh interval in seconds for kiosk QR codes (15-60)',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
                 'key' => 'timezone',
                 'group' => 'general',
                 'value' => 'Europe/Istanbul',
@@ -198,7 +217,7 @@ return new class extends Migration
         ];
 
         foreach ($settings as $setting) {
-            \DB::table('settings')->insert(array_merge($setting, [
+            DB::table('settings')->insert(array_merge($setting, [
                 'created_at' => now(),
                 'updated_at' => now(),
             ]));

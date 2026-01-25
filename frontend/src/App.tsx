@@ -15,6 +15,12 @@ import HomePage from '@/features/home/HomePage';
 import WorkerQRPage from '@/features/worker/WorkerQRPage';
 import ScannerPage from '@/features/scanner/ScannerPage';
 
+// Kiosk pages
+import { KioskDisplayPage, WorkerKioskScanPage } from '@/features/kiosk';
+
+// Settings pages
+import { SettingsPage } from '@/features/settings';
+
 // Create query client
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -105,6 +111,29 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/kiosk-scan"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <WorkerKioskScanPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <SettingsPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Public kiosk display (no auth required) */}
+          <Route path="/kiosk/:kioskCode/display" element={<KioskDisplayPage />} />
 
           {/* Catch all */}
           <Route path="*" element={<Navigate to="/" replace />} />

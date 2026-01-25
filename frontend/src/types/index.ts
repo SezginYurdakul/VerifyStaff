@@ -79,6 +79,7 @@ export interface TotpGenerateResponse {
   code: string;
   expires_at: string;
   remaining_seconds: number;
+  refresh_seconds: number;
 }
 
 export interface TotpVerifyRequest {
@@ -116,6 +117,14 @@ export interface Setting {
   value: string;
   type: 'string' | 'integer' | 'boolean' | 'json' | 'time';
   description: string | null;
+}
+
+export interface Settings {
+  general?: Record<string, { key: string; value: unknown; type: string; description: string }>;
+  work_hours?: Record<string, { key: string; value: unknown; type: string; description: string }>;
+  attendance?: Record<string, { key: string; value: unknown; type: string; description: string }>;
+  schedule?: Record<string, { key: string; value: unknown; type: string; description: string }>;
+  shifts?: Record<string, { key: string; value: unknown; type: string; description: string }>;
 }
 
 export interface WorkHours {
