@@ -13,7 +13,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(TotpService::class, function ($app) {
-            $timeStep = (int) \App\Models\Setting::getValue('totp_refresh_seconds', 30);
+            $timeStep = (int) \App\Models\Setting::getValue('worker_qr_refresh_seconds', 30);
             return new \App\Services\TotpService($timeStep);
         });
     }
