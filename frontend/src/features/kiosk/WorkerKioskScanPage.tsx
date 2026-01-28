@@ -4,6 +4,9 @@ import { useMutation } from "@tanstack/react-query";
 import { Html5QrcodeScanner, Html5QrcodeScanType } from "html5-qrcode";
 import { kioskCheckIn } from "@/api/kiosk";
 import { useAuthStore } from "@/stores/authStore";
+import { useSyncStore } from "@/stores/syncStore";
+import { addPendingLog, getLogCount } from "@/lib/db";
+import { syncPendingLogs } from "@/lib/syncService";
 import { Card, Button } from "@/components/ui";
 import type { AxiosError } from "axios";
 import type { ApiError } from "@/types";
@@ -29,17 +32,68 @@ function parseKioskQR(data: KioskQRData): { kioskCode: string; totpCode: string 
 export default function WorkerKioskScanPage() {
     const navigate = useNavigate();
     const user = useAuthStore((state) => state.user);
+    const { pendingCount } = useSyncStore();
     const scannerRef = useRef<Html5QrcodeScanner | null>(null);
-    
+
     const [scanResult, setScanResult] = useState<{
         success: boolean;
         message: string;
         action?: "check_in" | "check_out";
         time?: string;
+        isProvisional?: boolean;
     } | null>(null);
     const [isScanning, setIsScanning] = useState(true);
 
     const isWorker = user?.role === "worker";
+
+    // Auto-sync when coming back online
+    useEffect(() => {
+        const handleOnline = () => {
+            syncPendingLogs().catch(() => {});
+        };
+        window.addEventListener('online', handleOnline);
+        return () => window.removeEventListener('online', handleOnline);
+    }, []);
+
+    const saveOfflineKioskLog = async (kioskCode: string, totpCode: string) => {
+        if (!user) return;
+
+        const now = new Date();
+        const eventId = `kiosk-${user.id}-${kioskCode}-${now.getTime()}`;
+
+        await addPendingLog({
+            event_id: eventId,
+            worker_id: user.id,
+            rep_id: null,
+            kiosk_id: kioskCode,
+            type: 'in', // Placeholder - server will determine actual type
+            device_time: now.toISOString(),
+            device_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            sync_time: null,
+            sync_status: 'pending',
+            sync_attempt: 0,
+            offline_duration_seconds: 0,
+            flagged: false,
+            flag_reason: null,
+            latitude: null,
+            longitude: null,
+            work_minutes: null,
+            is_late: null,
+            is_early_departure: null,
+            is_overtime: null,
+            scanned_totp: totpCode,
+        });
+
+        const counts = await getLogCount();
+        useSyncStore.getState().setPendingCount(counts.pending);
+
+        setScanResult({
+            success: true,
+            message: "Attendance recorded offline. Will sync when online.",
+            isProvisional: true,
+        });
+        setIsScanning(false);
+    };
 
     const checkInMutation = useMutation({
         mutationFn: (data: { kiosk_code: string; totp_code: string }) =>
@@ -53,7 +107,12 @@ export default function WorkerKioskScanPage() {
             });
             setIsScanning(false);
         },
-        onError: (error: AxiosError<ApiError>) => {
+        onError: (error: AxiosError<ApiError>, variables) => {
+            // Network error or offline - save locally
+            if (!navigator.onLine || !error.response) {
+                saveOfflineKioskLog(variables.kiosk_code, variables.totp_code);
+                return;
+            }
             setScanResult({
                 success: false,
                 message: error.response?.data?.message || "Check-in failed. Please try again.",
@@ -82,6 +141,12 @@ export default function WorkerKioskScanPage() {
                 // Stop and clear the scanner instance immediately upon success
                 if (scannerRef.current) {
                     scannerRef.current.clear().catch(console.error);
+                }
+
+                // If offline, save directly without trying API
+                if (!navigator.onLine) {
+                    saveOfflineKioskLog(parsed.kioskCode, parsed.totpCode);
+                    return;
                 }
 
                 // Execute the check-in/out mutation
@@ -166,22 +231,38 @@ export default function WorkerKioskScanPage() {
         return (
             <div className="space-y-6">
                 <Card className="text-center">
-                    <div className={scanResult.success ? "text-green-600" : "text-red-600"}>
-                        <span className="text-6xl">{scanResult.success ? "✓" : "✗"}</span>
+                    <div className={
+                        scanResult.isProvisional
+                            ? "text-yellow-600"
+                            : scanResult.success ? "text-green-600" : "text-red-600"
+                    }>
+                        <span className="text-6xl">
+                            {scanResult.isProvisional ? "⏳" : scanResult.success ? "✓" : "✗"}
+                        </span>
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 mt-4 mb-2">
-                        {scanResult.success 
-                            ? (scanResult.action === "check_in" ? "Checked In" : "Checked Out")
-                            : "Check-in Failed"}
+                        {scanResult.isProvisional
+                            ? "Saved Offline"
+                            : scanResult.success
+                                ? (scanResult.action === "check_in" ? "Checked In" : "Checked Out")
+                                : "Check-in Failed"}
                     </h2>
                     <p className="text-gray-600">{scanResult.message}</p>
-                    
-                    {scanResult.success && scanResult.time && (
+
+                    {scanResult.success && scanResult.time && !scanResult.isProvisional && (
                         <p className="text-lg font-mono text-gray-800 mt-4">
                             {new Date(scanResult.time).toLocaleTimeString("en-US", {
                                 hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
                             })}
                         </p>
+                    )}
+
+                    {scanResult.isProvisional && (
+                        <div className="mt-4 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <p className="text-sm text-yellow-800">
+                                {pendingCount} pending record{pendingCount !== 1 ? 's' : ''} waiting to sync
+                            </p>
+                        </div>
                     )}
 
                     <div className="mt-6 flex gap-3 justify-center">
@@ -195,6 +276,21 @@ export default function WorkerKioskScanPage() {
 
     return (
         <div className="space-y-6">
+            {/* Offline Mode Banner */}
+            {!navigator.onLine && (
+                <Card className="bg-yellow-50 border-2 border-yellow-300">
+                    <div className="flex items-center gap-3">
+                        <span className="text-2xl">📴</span>
+                        <div>
+                            <div className="font-medium text-yellow-800">Offline Mode</div>
+                            <div className="text-sm text-yellow-700">
+                                Check-in will be saved locally and synced when online
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            )}
+
             <Card>
                 <h2 className="text-xl font-semibold text-gray-900 mb-2 text-center">Kiosk Check-in</h2>
                 <p className="text-gray-600 text-center mb-6">Scan the QR code displayed on the kiosk</p>

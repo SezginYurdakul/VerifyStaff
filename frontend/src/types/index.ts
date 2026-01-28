@@ -47,7 +47,7 @@ export interface AttendanceLog {
   event_id: string;
   worker_id: number;
   rep_id: number | null;
-  kiosk_id: number | null;
+  kiosk_id: string | null;
   type: AttendanceType;
   device_time: string;
   device_timezone: string;
@@ -63,6 +63,7 @@ export interface AttendanceLog {
   is_late: boolean | null;
   is_early_departure: boolean | null;
   is_overtime: boolean | null;
+  scanned_totp: string | null;
 }
 
 // Staff (for offline validation)
@@ -89,8 +90,10 @@ export interface TotpVerifyRequest {
 
 export interface TotpVerifyResponse {
   valid: boolean;
-  worker?: Staff;
-  message: string;
+  worker_id?: number;
+  worker_name?: string;
+  verified_at?: string;
+  message?: string;
 }
 
 // Kiosk types
@@ -170,19 +173,34 @@ export interface ApiError {
 }
 
 // Sync types
+export interface SyncLogEntry {
+  event_id: string;
+  worker_id: number;
+  type?: AttendanceType;
+  device_time: string;
+  device_timezone: string;
+  rep_id?: number | null;
+  kiosk_id?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  scanned_totp?: string | null;
+}
+
 export interface SyncLogsRequest {
-  logs: Omit<AttendanceLog, 'id' | 'sync_time' | 'sync_status'>[];
+  logs: SyncLogEntry[];
   toggle_mode?: boolean;
 }
 
 export interface SyncLogsResponse {
   message: string;
-  processed: number;
-  duplicates: number;
-  failed: number;
-  results: {
-    event_id: string;
-    status: 'created' | 'duplicate' | 'failed';
-    message?: string;
+  server_time: string;
+  synced_count: number;
+  duplicate_count: number;
+  error_count: number;
+  synced: AttendanceLog[];
+  duplicates: string[]; // event_ids
+  errors: {
+    worker_id: number;
+    reason: string;
   }[];
 }

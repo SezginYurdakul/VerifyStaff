@@ -31,6 +31,7 @@ Route::prefix('v1')->group(function () {
 
         // Attendance - for workers (kiosk mode)
         Route::post('attendance/self-check', [AttendanceController::class, 'selfCheck']);
+        Route::post('attendance/sync-offline', [AttendanceController::class, 'syncOfflineLogs']);
         Route::get('attendance/status', [AttendanceController::class, 'status']);
 
         // TOTP

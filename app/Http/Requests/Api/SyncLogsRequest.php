@@ -23,6 +23,7 @@ class SyncLogsRequest extends FormRequest
             'logs.*.offline_duration_seconds' => ['sometimes', 'integer', 'min:0'],
             'logs.*.latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'logs.*.longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
+            'logs.*.scanned_totp' => ['sometimes', 'nullable', 'string', 'size:6'],
         ];
     }
 

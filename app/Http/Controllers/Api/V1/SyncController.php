@@ -11,12 +11,16 @@ use App\Models\AttendanceLog;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\TotpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 class SyncController extends Controller
 {
+    public function __construct(
+        private TotpService $totpService
+    ) {}
 
     public function getStaffList(Request $request): JsonResponse
     {
@@ -48,14 +52,6 @@ class SyncController extends Controller
         if (!$user->isRepresentative() && !$user->isAdmin()) {
             return response()->json([
                 'message' => 'Unauthorized. Only representatives can sync logs.',
-            ], 403);
-        }
-
-        // Check if representative mode is enabled
-        if (Setting::isKioskMode()) {
-            return response()->json([
-                'message' => 'System is in kiosk mode. Representative sync is disabled.',
-                'attendance_mode' => 'kiosk',
             ], 403);
         }
 
@@ -133,12 +129,29 @@ class SyncController extends Controller
                 continue;
             }
 
-            $flagged = false;
-            $flagReason = null;
+            // Verify scanned TOTP against device_time to detect tampering
+            $scannedTotp = $log['scanned_totp'] ?? null;
+            $totpVerified = false;
+
+            if ($scannedTotp && $worker->secret_token) {
+                $totpVerified = $this->totpService->verifyCodeAtTime(
+                    $worker->secret_token,
+                    $scannedTotp,
+                    $deviceTime->timestamp
+                );
+            }
+
+            // Flag based on TOTP verification result
+            $flagged = !$totpVerified;
+            $flagReason = $totpVerified
+                ? null
+                : ($scannedTotp
+                    ? 'TOTP mismatch - possible tampering of device_time'
+                    : 'TOTP not provided');
 
             if ($deviceTime->isFuture()) {
                 $flagged = true;
-                $flagReason = 'Future timestamp detected';
+                $flagReason = ($flagReason ? $flagReason . '; ' : '') . 'Future timestamp detected';
             }
 
             // Check for duplicate scan within configured window
@@ -152,7 +165,7 @@ class SyncController extends Controller
 
             if ($recentScan) {
                 $flagged = true;
-                $flagReason = "Duplicate scan within {$duplicateScanWindow} minutes";
+                $flagReason = ($flagReason ? $flagReason . '; ' : '') . "Duplicate scan within {$duplicateScanWindow} minutes";
             }
 
             $logData = [

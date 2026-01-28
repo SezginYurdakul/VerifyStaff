@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\TotpService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class AttendanceController extends Controller
 {
@@ -229,6 +230,187 @@ class AttendanceController extends Controller
                 'formatted_time' => sprintf('%d:%02d', intdiv($totalMinutes, 60), $totalMinutes % 60),
             ],
             'attendance_mode' => Setting::getAttendanceMode(),
+        ]);
+    }
+
+    /**
+     * Sync offline kiosk attendance logs.
+     * Worker's device was offline when scanning kiosk QR, logs are synced later.
+     */
+    public function syncOfflineLogs(Request $request): JsonResponse
+    {
+        $worker = $request->user();
+
+        if (!$worker->isWorker()) {
+            return response()->json([
+                'message' => 'Only workers can sync offline kiosk logs.',
+            ], 403);
+        }
+
+        if (!Setting::isKioskMode()) {
+            return response()->json([
+                'message' => 'Kiosk mode is not enabled.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'logs' => ['required', 'array', 'min:1'],
+            'logs.*.kiosk_code' => ['required', 'string', 'max:20'],
+            'logs.*.device_time' => ['required', 'date'],
+            'logs.*.device_timezone' => ['sometimes', 'string', 'max:50'],
+            'logs.*.event_id' => ['required', 'string', 'max:64'],
+            'logs.*.scanned_totp' => ['sometimes', 'nullable', 'string', 'size:6'],
+        ]);
+
+        $synced = [];
+        $duplicates = [];
+        $errors = [];
+
+        $config = Setting::getWorkHoursConfig();
+        $workStartTime = $config['work_start_time'];
+        $workEndTime = $config['work_end_time'];
+        $regularWorkMinutes = $config['regular_work_minutes'];
+        $lateThresholdMinutes = $config['late_threshold_minutes'];
+        $duplicateScanWindow = $config['duplicate_scan_window_minutes'];
+
+        foreach ($validated['logs'] as $log) {
+            $kiosk = Kiosk::where('code', $log['kiosk_code'])
+                ->where('status', 'active')
+                ->first();
+
+            if (!$kiosk) {
+                $errors[] = [
+                    'event_id' => $log['event_id'],
+                    'reason' => 'Invalid or inactive kiosk: ' . $log['kiosk_code'],
+                ];
+                continue;
+            }
+
+            $deviceTime = Carbon::parse($log['device_time']);
+
+            // Server-side in/out detection
+            $type = $this->detectAttendanceType($worker->id, $deviceTime);
+
+            // Generate server-side event_id
+            $eventId = AttendanceLog::generateEventId(
+                $worker->id,
+                0,
+                $log['device_time'],
+                $type
+            );
+
+            if (AttendanceLog::where('event_id', $eventId)->exists()) {
+                $duplicates[] = $log['event_id'];
+                continue;
+            }
+
+            // Verify scanned TOTP against device_time to detect tampering
+            $scannedTotp = $log['scanned_totp'] ?? null;
+            $totpVerified = false;
+
+            if ($scannedTotp) {
+                $kioskTimeStep = $this->totpService->getKioskTimeStep();
+                $totpVerified = $this->totpService->verifyCodeAtTime(
+                    $kiosk->secret_token,
+                    $scannedTotp,
+                    $deviceTime->timestamp,
+                    $kioskTimeStep
+                );
+            }
+
+            // Flag based on TOTP verification result
+            $flagged = !$totpVerified;
+            $flagReason = $totpVerified
+                ? null
+                : ($scannedTotp
+                    ? 'Offline kiosk sync - TOTP mismatch (possible tampering of device_time)'
+                    : 'Offline kiosk sync - TOTP not provided');
+
+            if ($deviceTime->isFuture()) {
+                $flagged = true;
+                $flagReason = ($flagReason ? $flagReason . '; ' : '') . 'Future timestamp detected';
+            }
+
+            $recentScan = AttendanceLog::where('worker_id', $worker->id)
+                ->where('type', $type)
+                ->whereBetween('device_time', [
+                    $deviceTime->copy()->subMinutes($duplicateScanWindow),
+                    $deviceTime->copy()->addMinutes($duplicateScanWindow)
+                ])
+                ->exists();
+
+            if ($recentScan) {
+                $flagged = true;
+                $flagReason = ($flagReason ? $flagReason . '; ' : '') . "Duplicate scan within {$duplicateScanWindow} minutes";
+            }
+
+            $logData = [
+                'event_id' => $eventId,
+                'worker_id' => $worker->id,
+                'rep_id' => null,
+                'kiosk_id' => $kiosk->code,
+                'type' => $type,
+                'device_time' => $deviceTime,
+                'device_timezone' => $log['device_timezone'] ?? 'UTC',
+                'sync_time' => now(),
+                'sync_status' => 'synced',
+                'flagged' => $flagged,
+                'flag_reason' => $flagReason,
+            ];
+
+            // Calculate fields based on type
+            if ($type === 'in') {
+                $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workStartTime);
+                $graceEnd = $expectedStart->copy()->addMinutes($lateThresholdMinutes);
+                $logData['is_late'] = $deviceTime->gt($graceEnd);
+            } elseif ($type === 'out') {
+                $checkIn = AttendanceLog::where('worker_id', $worker->id)
+                    ->where('type', 'in')
+                    ->whereNull('paired_log_id')
+                    ->where('device_time', '>=', $deviceTime->copy()->subHours(24))
+                    ->where('device_time', '<', $deviceTime)
+                    ->orderBy('device_time', 'desc')
+                    ->first();
+
+                if ($checkIn) {
+                    $workMinutes = $checkIn->device_time->diffInMinutes($deviceTime);
+                    $logData['work_minutes'] = $workMinutes;
+                    $logData['paired_log_id'] = $checkIn->id;
+
+                    if ($workMinutes > $regularWorkMinutes) {
+                        $logData['is_overtime'] = true;
+                        $logData['overtime_minutes'] = $workMinutes - $regularWorkMinutes;
+                    } else {
+                        $logData['is_overtime'] = false;
+                        $logData['overtime_minutes'] = 0;
+                    }
+
+                    $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workEndTime);
+                    $logData['is_early_departure'] = $deviceTime->lt($expectedEnd);
+                }
+            }
+
+            $attendanceLog = AttendanceLog::create($logData);
+
+            if ($type === 'out' && isset($checkIn)) {
+                $checkIn->update(['paired_log_id' => $attendanceLog->id]);
+            }
+
+            $synced[] = [
+                'event_id' => $log['event_id'],
+                'type' => $type,
+            ];
+        }
+
+        return response()->json([
+            'message' => 'Offline kiosk logs processed',
+            'server_time' => now()->toIso8601String(),
+            'synced_count' => count($synced),
+            'duplicate_count' => count($duplicates),
+            'error_count' => count($errors),
+            'synced' => $synced,
+            'duplicates' => $duplicates,
+            'errors' => $errors,
         ]);
     }
 

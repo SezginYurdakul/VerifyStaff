@@ -3,8 +3,9 @@ import type { Kiosk } from '@/types';
 
 // Get kiosk QR code (public endpoint - no auth needed)
 export async function getKioskCode(kioskCode: string): Promise<{
-  code: string;
+  totp_code: string;
   kiosk_code: string;
+  kiosk_name: string;
   expires_at: string;
   remaining_seconds: number;
   refresh_seconds: number;
@@ -49,6 +50,38 @@ export async function updateKiosk(
 export async function regenerateKioskToken(kioskCode: string): Promise<Kiosk> {
   const response = await api.post<{ kiosk: Kiosk }>(`/kiosks/${kioskCode}/regenerate-token`);
   return response.data.kiosk;
+}
+
+// Worker: Sync offline kiosk attendance logs
+export interface OfflineKioskSyncRequest {
+  logs: {
+    kiosk_code: string;
+    device_time: string;
+    device_timezone: string;
+    event_id: string;
+    scanned_totp?: string | null;
+  }[];
+}
+
+export interface OfflineKioskSyncResponse {
+  message: string;
+  server_time: string;
+  synced_count: number;
+  duplicate_count: number;
+  error_count: number;
+  synced: { event_id: string; type: string }[];
+  duplicates: string[];
+  errors: { event_id: string; reason: string }[];
+}
+
+export async function syncOfflineKioskLogs(
+  data: OfflineKioskSyncRequest
+): Promise<OfflineKioskSyncResponse> {
+  const response = await api.post<OfflineKioskSyncResponse>(
+    '/attendance/sync-offline',
+    data
+  );
+  return response.data;
 }
 
 // Worker: Check-in/check-out via kiosk QR code
