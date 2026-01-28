@@ -31,6 +31,10 @@ return new class extends Migration
             $table->unsignedInteger('missing_checkouts')->default(0);
             $table->unsignedInteger('missing_checkins')->default(0);
 
+            // Smart recalculation tracking
+            $table->boolean('is_dirty')->default(false);
+            $table->string('source_hash', 32)->nullable(); // xxh3 hash for yearly validation
+
             $table->timestamp('calculated_at')->nullable();
             $table->timestamps();
 
@@ -38,6 +42,7 @@ return new class extends Migration
             $table->unique(['worker_id', 'period_type', 'period_start']);
             $table->index(['worker_id', 'period_type']);
             $table->index('period_start');
+            $table->index('is_dirty'); // For efficient dirty summary queries
         });
     }
 

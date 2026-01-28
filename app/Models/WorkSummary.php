@@ -21,6 +21,8 @@ class WorkSummary extends Model
         'early_departures',
         'missing_checkouts',
         'missing_checkins',
+        'is_dirty',
+        'source_hash',
         'calculated_at',
     ];
 
@@ -28,6 +30,7 @@ class WorkSummary extends Model
         'period_start' => 'date',
         'period_end' => 'date',
         'calculated_at' => 'datetime',
+        'is_dirty' => 'boolean',
     ];
 
     public function worker(): BelongsTo

@@ -34,3 +34,9 @@ Schedule::command('summaries:calculate --period=monthly')
     ->monthlyOn(1, '03:00')
     ->withoutOverlapping()
     ->appendOutputTo(storage_path('logs/summaries.log'));
+
+// Dirty summaries - run every 15 minutes to recalculate changed data
+Schedule::command('summaries:calculate --dirty-only')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->appendOutputTo(storage_path('logs/summaries.log'));

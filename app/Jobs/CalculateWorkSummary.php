@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\WorkSummaryService;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -13,7 +14,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
-class CalculateWorkSummary implements ShouldQueue
+class CalculateWorkSummary implements ShouldQueue, ShouldBeUniqueUntilProcessing
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -25,6 +26,26 @@ class CalculateWorkSummary implements ShouldQueue
         public string $date,
         public string $periodType = 'weekly'
     ) {}
+
+    /**
+     * Unique job identifier to prevent duplicate jobs in queue.
+     */
+    public function uniqueId(): string
+    {
+        return "{$this->workerId}:{$this->periodType}:{$this->date}";
+    }
+
+    /**
+     * How long the unique lock should be held (until end of the period day).
+     */
+    public function uniqueFor(): int
+    {
+        $endOfDay = Carbon::parse($this->date)->endOfDay();
+        $seconds = $endOfDay->diffInSeconds(now());
+
+        // Minimum 60 seconds, maximum 1 day
+        return max(60, min($seconds, 86400));
+    }
 
     public function handle(WorkSummaryService $service): void
     {

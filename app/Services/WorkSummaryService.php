@@ -53,6 +53,7 @@ class WorkSummaryService
 
     /**
      * Calculate yearly summary from monthly summaries.
+     * Uses source_hash to skip recalculation if data hasn't changed.
      */
     public function calculateYearly(User $worker, int $year): WorkSummary
     {
@@ -63,10 +64,24 @@ class WorkSummaryService
         $currentYear = (int) date('Y');
         $maxMonth = ($year < $currentYear) ? 12 : (int) date('n');
 
+        // Calculate source hash from attendance logs
+        $newHash = $this->calculateSourceHash($worker, $yearStart, $yearEnd);
+
+        // Check existing summary
+        $existingSummary = WorkSummary::where('worker_id', $worker->id)
+            ->where('period_type', 'yearly')
+            ->whereDate('period_start', $yearStart)
+            ->first();
+
+        // Skip if hash matches (data hasn't changed)
+        if ($existingSummary && $existingSummary->source_hash === $newHash && !$existingSummary->is_dirty) {
+            return $existingSummary;
+        }
+
         // Aggregate from monthly summaries (Source of Truth)
         $summary = $this->aggregateFromMonthlySummaries($worker, $year, $maxMonth);
 
-        return $this->saveSummary($worker, 'yearly', $yearStart, $yearEnd, $summary);
+        return $this->saveSummary($worker, 'yearly', $yearStart, $yearEnd, $summary, $newHash);
     }
 
     /**
@@ -236,7 +251,29 @@ class WorkSummaryService
         }
     }
 
-    private function saveSummary(User $worker, string $periodType, Carbon $periodStart, Carbon $periodEnd, array $summary): WorkSummary
+    /**
+     * Calculate a hash of the source attendance logs for change detection.
+     * Used primarily for yearly summaries to avoid unnecessary recalculations.
+     */
+    private function calculateSourceHash(User $worker, Carbon $periodStart, Carbon $periodEnd): string
+    {
+        $logs = AttendanceLog::where('worker_id', $worker->id)
+            ->whereBetween('device_time', [$periodStart->startOfDay(), $periodEnd->endOfDay()])
+            ->orderBy('id')
+            ->get(['id', 'updated_at']);
+
+        if ($logs->isEmpty()) {
+            return hash('xxh3', 'empty');
+        }
+
+        $payload = $logs
+            ->map(fn ($log) => $log->id . ':' . $log->updated_at->timestamp)
+            ->implode('|');
+
+        return hash('xxh3', $payload);
+    }
+
+    private function saveSummary(User $worker, string $periodType, Carbon $periodStart, Carbon $periodEnd, array $summary, ?string $sourceHash = null): WorkSummary
     {
         return WorkSummary::updateOrCreate(
             [
@@ -255,6 +292,8 @@ class WorkSummaryService
                 'early_departures' => $summary['early_departures'],
                 'missing_checkouts' => $summary['missing_checkouts'],
                 'missing_checkins' => $summary['missing_checkins'],
+                'is_dirty' => false, // Reset dirty flag after recalculation
+                'source_hash' => $sourceHash,
                 'calculated_at' => now(),
             ]
         );

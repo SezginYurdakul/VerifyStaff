@@ -15,7 +15,8 @@ class CalculateSummaries extends Command
                             {--date= : Specific date (YYYY-MM-DD) to calculate for}
                             {--month= : Specific month (YYYY-MM) for monthly calculation}
                             {--year= : Specific year (YYYY) for yearly calculation (processes each month)}
-                            {--force : Recalculate even if summary exists}';
+                            {--force : Recalculate even if summary exists}
+                            {--dirty-only : Only recalculate summaries marked as dirty}';
 
     protected $description = 'Pre-calculate work summaries for all workers';
 
@@ -29,6 +30,12 @@ class CalculateSummaries extends Command
     {
         $period = $this->option('period');
         $force = $this->option('force');
+        $dirtyOnly = $this->option('dirty-only');
+
+        // If dirty-only mode, process all dirty summaries regardless of period
+        if ($dirtyOnly) {
+            return $this->processDirtySummaries();
+        }
 
         $workers = User::where('role', 'worker')
             ->where('status', 'active')
@@ -53,6 +60,47 @@ class CalculateSummaries extends Command
         return Command::SUCCESS;
     }
 
+    /**
+     * Process all dirty summaries across all workers and periods.
+     */
+    private function processDirtySummaries(): int
+    {
+        $dirtySummaries = WorkSummary::where('is_dirty', true)->get();
+
+        if ($dirtySummaries->isEmpty()) {
+            $this->info('No dirty summaries found.');
+            return Command::SUCCESS;
+        }
+
+        $this->info("Found {$dirtySummaries->count()} dirty summaries to recalculate.");
+        $bar = $this->output->createProgressBar($dirtySummaries->count());
+        $bar->start();
+
+        foreach ($dirtySummaries as $summary) {
+            $worker = User::find($summary->worker_id);
+            if (!$worker) {
+                $bar->advance();
+                continue;
+            }
+
+            match ($summary->period_type) {
+                'daily' => $this->summaryService->calculateDaily($worker, $summary->period_start->copy()),
+                'weekly' => $this->summaryService->calculateWeekly($worker, $summary->period_start->copy()),
+                'monthly' => $this->summaryService->calculateMonthly($worker, $summary->period_start->copy()),
+                'yearly' => $this->summaryService->calculateYearly($worker, $summary->period_start->year),
+                default => null,
+            };
+
+            $bar->advance();
+        }
+
+        $bar->finish();
+        $this->newLine();
+        $this->info("Recalculated {$dirtySummaries->count()} dirty summaries.");
+
+        return Command::SUCCESS;
+    }
+
     private function calculatePeriod($workers, string $period, bool $force): void
     {
         $this->info("Calculating {$period} summaries...");
@@ -70,9 +118,10 @@ class CalculateSummaries extends Command
         $skipped = 0;
 
         foreach ($workers as $worker) {
-            $exists = $this->summaryExists($worker->id, $period, $date);
+            $summary = $this->getSummary($worker->id, $period, $date);
 
-            if ($exists && !$force) {
+            // Skip if exists and not dirty (unless force is set)
+            if ($summary && !$summary->is_dirty && !$force) {
                 $skipped++;
                 $bar->advance();
                 continue;
@@ -105,9 +154,10 @@ class CalculateSummaries extends Command
             $bar->start();
 
             foreach ($workers as $worker) {
-                $exists = $this->summaryExists($worker->id, 'monthly', $monthDate);
+                $summary = $this->getSummary($worker->id, 'monthly', $monthDate);
 
-                if ($exists && !$force) {
+                // Skip if exists and not dirty (unless force is set)
+                if ($summary && !$summary->is_dirty && !$force) {
                     $bar->advance();
                     continue;
                 }
@@ -147,16 +197,19 @@ class CalculateSummaries extends Command
         };
     }
 
-    private function summaryExists(int $workerId, string $period, Carbon $date): bool
+    /**
+     * Get existing summary for worker and period.
+     */
+    private function getSummary(int $workerId, string $period, Carbon $date): ?WorkSummary
     {
         $query = WorkSummary::where('worker_id', $workerId)
             ->where('period_type', $period);
 
         return match ($period) {
-            'daily' => $query->whereDate('period_start', $date)->exists(),
-            'weekly' => $query->whereDate('period_start', $date->copy()->startOfWeek())->exists(),
-            'monthly' => $query->whereDate('period_start', $date->copy()->startOfMonth())->exists(),
-            default => false
+            'daily' => $query->whereDate('period_start', $date)->first(),
+            'weekly' => $query->whereDate('period_start', $date->copy()->startOfWeek())->first(),
+            'monthly' => $query->whereDate('period_start', $date->copy()->startOfMonth())->first(),
+            default => null
         };
     }
 }

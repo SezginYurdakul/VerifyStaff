@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\AttendanceLog;
+use App\Models\WorkSummary;
 use App\Services\AuditLogger;
 use Illuminate\Support\Facades\Auth;
 
@@ -13,6 +14,8 @@ class AttendanceLogObserver
      */
     public function created(AttendanceLog $log): void
     {
+        $this->markRelatedSummariesDirty($log);
+
         AuditLogger::attendance(
             action: $log->type === 'in' ? 'check_in' : 'check_out',
             workerId: $log->worker_id,
@@ -39,6 +42,12 @@ class AttendanceLogObserver
         $significantFields = ['flagged', 'paired_log_id', 'work_minutes', 'is_late', 'is_early_departure'];
         $hasSignificantChange = !empty(array_intersect(array_keys($changes), $significantFields));
 
+        // Mark summaries dirty if summary-affecting fields changed
+        $summaryAffectingFields = ['work_minutes', 'is_late', 'is_early_departure', 'is_overtime', 'overtime_minutes', 'paired_log_id', 'device_time'];
+        if (!empty(array_intersect(array_keys($changes), $summaryAffectingFields))) {
+            $this->markRelatedSummariesDirty($log);
+        }
+
         if ($hasSignificantChange) {
             AuditLogger::attendance(
                 action: 'updated',
@@ -58,6 +67,8 @@ class AttendanceLogObserver
      */
     public function deleted(AttendanceLog $log): void
     {
+        $this->markRelatedSummariesDirty($log);
+
         AuditLogger::attendance(
             action: 'deleted',
             workerId: $log->worker_id,
@@ -68,5 +79,21 @@ class AttendanceLogObserver
             ],
             performedBy: Auth::id()
         );
+    }
+
+    /**
+     * Mark all work summaries that include this log's device_time as dirty.
+     * This ensures weekly, monthly, and yearly summaries get recalculated.
+     */
+    private function markRelatedSummariesDirty(AttendanceLog $log): void
+    {
+        if (!$log->device_time || !$log->worker_id) {
+            return;
+        }
+
+        WorkSummary::where('worker_id', $log->worker_id)
+            ->where('period_start', '<=', $log->device_time)
+            ->where('period_end', '>=', $log->device_time)
+            ->update(['is_dirty' => true]);
     }
 }
