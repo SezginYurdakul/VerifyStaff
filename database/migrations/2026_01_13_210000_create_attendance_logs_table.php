@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('event_id', 64)->unique();
             $table->foreignId('worker_id')->constrained('users')->onDelete('cascade');
-            $table->foreignId('rep_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('rep_id')->nullable()->constrained('users')->nullOnDelete();
             $table->enum('type', ['in', 'out']);
             $table->timestamp('device_time');
             $table->string('device_timezone', 50)->default('UTC');
@@ -27,6 +27,7 @@ return new class extends Migration
             $table->string('flag_reason')->nullable();
             $table->decimal('latitude', 10, 8)->nullable();
             $table->decimal('longitude', 11, 8)->nullable();
+            $table->string('kiosk_id', 20)->nullable();
 
             // Paired check-out reference (for check-in records)
             $table->foreignId('paired_log_id')->nullable()->constrained('attendance_logs')->nullOnDelete();
@@ -44,6 +45,7 @@ return new class extends Migration
             $table->index(['rep_id', 'device_time']);
             $table->index('sync_status');
             $table->index(['worker_id', 'type', 'device_time']);
+            $table->index('kiosk_id');
         });
     }
 
