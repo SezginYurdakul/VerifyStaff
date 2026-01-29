@@ -169,20 +169,20 @@ return new class extends Migration
 
             // General Settings
             [
-                'key' => 'totp_refresh_seconds',
+                'key' => 'worker_qr_refresh_seconds',
                 'group' => 'general',
                 'value' => '30',
                 'type' => 'integer',
-                'description' => 'TOTP code refresh interval in seconds for worker QR codes (15-60)',
+                'description' => 'How often the worker QR code refreshes (15-60 seconds)',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
-                'key' => 'kiosk_totp_refresh_seconds',
+                'key' => 'kiosk_qr_refresh_seconds',
                 'group' => 'general',
                 'value' => '30',
                 'type' => 'integer',
-                'description' => 'TOTP code refresh interval in seconds for kiosk QR codes (15-60)',
+                'description' => 'How often the kiosk QR code refreshes (15-60 seconds)',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
