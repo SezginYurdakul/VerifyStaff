@@ -11,7 +11,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
-  const { isOnline, pendingCount } = useSyncStore();
+  const { pendingCount } = useSyncStore();
+  const isOnline = navigator.onLine;
 
   const handleLogout = () => {
     logout();
@@ -21,7 +22,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const navItems = [
     { path: '/', label: 'Home', icon: '🏠' },
     { path: '/qr', label: 'My QR', icon: '📱', roles: ['worker'] },
+    { path: '/kiosk-scan', label: 'Kiosk', icon: '🖥️', roles: ['worker'] },
     { path: '/scan', label: 'Scan', icon: '📷', roles: ['representative', 'admin'] },
+    { path: '/kiosk-display', label: 'Kiosk QR', icon: '🖥️', roles: ['representative', 'admin'] },
+    { path: '/settings', label: 'Settings', icon: '⚙️', roles: ['admin'] },
   ];
 
   const filteredNavItems = navItems.filter(

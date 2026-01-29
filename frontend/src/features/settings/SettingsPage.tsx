@@ -151,8 +151,8 @@ function GeneralSettings({
         <h3 className="font-medium text-gray-900 mb-4">QR Code Settings</h3>
         <div className="grid grid-cols-2 gap-4">
           <SettingField
-            label="Worker QR Refresh Seconds"
-            value={general.totp_refresh_seconds?.value as number || 30}
+            label="Worker QR Refresh (seconds)"
+            value={general.worker_qr_refresh_seconds?.value as number || 30}
             type="number"
             min={15}
             max={60}
@@ -163,14 +163,14 @@ function GeneralSettings({
                 return;
               }
               const numValue = Math.max(15, Math.min(60, parsed));
-              onUpdate('totp_refresh_seconds', numValue);
+              onUpdate('worker_qr_refresh_seconds', numValue);
             }}
             disabled={isUpdating}
-            hint="Worker QR code refresh interval (15-60 seconds)"
+            hint="How often the worker's QR code refreshes (15-60 seconds)"
           />
           <SettingField
-            label="Kiosk QR Refresh Seconds"
-            value={general.kiosk_totp_refresh_seconds?.value as number || 30}
+            label="Kiosk QR Refresh (seconds)"
+            value={general.kiosk_qr_refresh_seconds?.value as number || 30}
             type="number"
             min={15}
             max={60}
@@ -181,10 +181,10 @@ function GeneralSettings({
                 return;
               }
               const numValue = Math.max(15, Math.min(60, parsed));
-              onUpdate('kiosk_totp_refresh_seconds', numValue);
+              onUpdate('kiosk_qr_refresh_seconds', numValue);
             }}
             disabled={isUpdating}
-            hint="Kiosk QR code refresh interval (15-60 seconds)"
+            hint="How often the kiosk display QR code refreshes (15-60 seconds)"
           />
         </div>
       </Card>

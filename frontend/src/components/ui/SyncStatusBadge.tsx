@@ -18,7 +18,8 @@ export default function SyncStatusBadge({
     message,
     size = "md",
 }: SyncStatusBadgeProps) {
-    const { isOnline, isSyncing, pendingCount } = useSyncStore();
+    const { isSyncing, pendingCount } = useSyncStore();
+    const isOnline = navigator.onLine;
 
     // If explicitly marked as provisional
     if (isProvisional) {

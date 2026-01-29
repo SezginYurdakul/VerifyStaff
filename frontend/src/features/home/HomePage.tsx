@@ -5,7 +5,8 @@ import { Card } from '@/components/ui';
 
 export default function HomePage() {
   const user = useAuthStore((state) => state.user);
-  const { isOnline, pendingCount, lastSyncTime } = useSyncStore();
+  const { pendingCount, lastSyncTime } = useSyncStore();
+  const isOnline = navigator.onLine;
 
   const roleActions = {
     worker: [
@@ -32,6 +33,13 @@ export default function HomePage() {
         icon: '📷',
         color: 'bg-green-500',
       },
+      {
+        title: 'Kiosk QR Display',
+        description: 'Open kiosk QR code display for worker self check-in',
+        path: '/kiosk-display',
+        icon: '🖥️',
+        color: 'bg-purple-500',
+      },
     ],
     admin: [
       {
@@ -42,16 +50,9 @@ export default function HomePage() {
         color: 'bg-green-500',
       },
       {
-        title: 'Show My QR Code',
-        description: 'Display your QR code for representative check-in',
-        path: '/qr',
-        icon: '📱',
-        color: 'bg-blue-500',
-      },
-      {
-        title: 'Kiosk Check-in',
-        description: 'Scan a kiosk QR code to check in/out',
-        path: '/kiosk-scan',
+        title: 'Kiosk QR Display',
+        description: 'Open kiosk QR code display for worker self check-in',
+        path: '/kiosk-display',
         icon: '🖥️',
         color: 'bg-purple-500',
       },
