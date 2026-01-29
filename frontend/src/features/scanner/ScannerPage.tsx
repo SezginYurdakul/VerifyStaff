@@ -4,9 +4,14 @@ import { useMutation } from '@tanstack/react-query';
 import { verifyTotpCode } from '@/api/totp';
 import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
-import { addPendingLog, getStaffByToken, getLogCount } from '@/lib/db';
+import { addPendingLog, getStaffById, getLogCount } from '@/lib/db';
+import { syncPendingLogs } from '@/lib/syncService';
 import { Card, Button, SyncStatusBadge } from '@/components/ui';
 import type { Staff } from '@/types';
+import type { AxiosError } from 'axios';
+import type { ApiError } from '@/types';
+
+const SCAN_COOLDOWN_MS = 5000; // Ignore same QR for 5 seconds
 
 type ScanResult = {
   success: boolean;
@@ -16,42 +21,63 @@ type ScanResult = {
   isProvisional?: boolean;
 };
 
+// Worker QR format: {wid: number, otp: string, i: "in"|"out", w: number}
+type WorkerQRData = {
+  wid: number;
+  otp: string;
+  i?: 'in' | 'out';
+  w?: number;
+};
+
+function parseWorkerQR(decodedText: string): WorkerQRData | null {
+  try {
+    const data = JSON.parse(decodedText);
+    if (data.wid && data.otp) {
+      return {
+        wid: data.wid,
+        otp: data.otp,
+        i: data.i,
+        w: data.w,
+      };
+    }
+  } catch {
+    // Not JSON - invalid format
+  }
+  return null;
+}
+
 export default function ScannerPage() {
   const user = useAuthStore((state) => state.user);
-  const { isOnline, setPendingCount } = useSyncStore();
+  const { setPendingCount } = useSyncStore();
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   const [isScanning, setIsScanning] = useState(false);
   const [lastResult, setLastResult] = useState<ScanResult | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
+  // Track online/offline status reactively
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const lastScanRef = useRef<{ text: string; time: number } | null>(null);
   const scannerContainerId = 'qr-reader';
 
   // Verify TOTP mutation (online mode)
   const verifyMutation = useMutation({
     mutationFn: verifyTotpCode,
-    onSuccess: (data) => {
-      if (data.valid && data.worker) {
-        handleSuccessfulScan(data.worker, 'in'); // TODO: determine type
-      } else {
-        setLastResult({
-          success: false,
-          message: data.message || 'Invalid code',
-        });
-        triggerFeedback(false);
-      }
-    },
-    onError: () => {
-      setLastResult({
-        success: false,
-        message: 'Verification failed. Please try again.',
-      });
-      triggerFeedback(false);
-    },
   });
 
   // Handle successful scan
-  const handleSuccessfulScan = async (worker: Staff, type: 'in' | 'out', provisional: boolean = false) => {
+  const handleSuccessfulScan = async (worker: Staff, type: 'in' | 'out', provisional: boolean = false, totpCode: string | null = null) => {
     // Create attendance log
     const eventId = generateEventId(worker.id, user!.id, type);
     const now = new Date();
@@ -76,11 +102,17 @@ export default function ScannerPage() {
       is_late: null,
       is_early_departure: null,
       is_overtime: null,
+      scanned_totp: totpCode,
     });
 
     // Update pending count
     const counts = await getLogCount();
     setPendingCount(counts.pending);
+
+    // Trigger sync after a short delay (catch 403 silently — mode/role mismatch)
+    if (navigator.onLine) {
+      setTimeout(() => syncPendingLogs().catch(() => {}), 1000);
+    }
 
     setLastResult({
       success: true,
@@ -117,53 +149,135 @@ export default function ScannerPage() {
     setTimeout(() => setLastResult(null), 3000);
   };
 
+  // Resume scanner after a delay
+  const resumeScanner = useCallback(() => {
+    setTimeout(async () => {
+      try {
+        if (scannerRef.current?.getState() === Html5QrcodeScannerState.PAUSED) {
+          await scannerRef.current.resume();
+        }
+      } catch {
+        // Scanner may have been stopped
+      }
+    }, 2000);
+  }, []);
+
   // Handle QR code scan
   const onScanSuccess = useCallback(
     async (decodedText: string) => {
+      // Deduplication: ignore same QR code within cooldown period
+      const now = Date.now();
+      if (
+        lastScanRef.current &&
+        lastScanRef.current.text === decodedText &&
+        now - lastScanRef.current.time < SCAN_COOLDOWN_MS
+      ) {
+        return;
+      }
+      lastScanRef.current = { text: decodedText, time: now };
+
       // Pause scanning while processing
       if (scannerRef.current?.getState() === Html5QrcodeScannerState.SCANNING) {
-        await scannerRef.current.pause();
+        await scannerRef.current.pause(true);
       }
 
       try {
-        // Try to parse as TOTP code (6 digits)
-        const code = decodedText.trim();
+        // Parse QR data - expecting JSON format {wid, otp, i, w}
+        const qrData = parseWorkerQR(decodedText);
 
-        if (isOnline) {
-          // Online: verify with server
-          // We need worker_id, but QR only has code.
-          // In real implementation, QR would contain JSON with worker_id and code
-          // For now, try to find worker by checking all staff tokens
+        if (!qrData) {
           setLastResult({
             success: false,
-            message: 'Processing...',
+            message: 'Invalid QR code format',
           });
+          triggerFeedback(false);
+          resumeScanner();
+          return;
+        }
 
-          // Try to verify - this is a simplified version
-          // Real implementation would have worker_id in QR
-          const worker = await getStaffByToken(code);
-          if (worker) {
-            verifyMutation.mutate({ worker_id: worker.id, code });
-          } else {
-            setLastResult({
-              success: false,
-              message: 'Worker not found',
-            });
-            triggerFeedback(false);
-          }
+        const { wid, otp, i: intent } = qrData;
+        const scanType = intent || 'in'; // Default to check-in if not specified
+
+        setLastResult({
+          success: false,
+          message: 'Processing...',
+        });
+
+        if (isOnline) {
+          // Online: verify with server using worker_id from QR
+          verifyMutation.mutate(
+            { worker_id: wid, code: otp },
+            {
+              onSuccess: (data) => {
+                if (data.valid && data.worker_id) {
+                  // API returns worker_id and worker_name, construct Staff object
+                  const verifiedWorker: Staff = {
+                    id: data.worker_id,
+                    name: data.worker_name || 'Unknown',
+                    employee_id: null,
+                    secret_token: '',
+                    status: 'active',
+                  };
+                  handleSuccessfulScan(verifiedWorker, scanType, false, otp);
+                } else {
+                  setLastResult({
+                    success: false,
+                    message: data.message || 'Invalid code',
+                  });
+                  triggerFeedback(false);
+                }
+                resumeScanner();
+              },
+              onError: async (err) => {
+                const axiosErr = err as AxiosError<ApiError>;
+                const isNetworkError = !axiosErr.response;
+
+                // Network error (offline/server down): save locally as provisional
+                if (isNetworkError) {
+                  const worker = await getStaffById(wid);
+                  if (worker && worker.status === 'active') {
+                    handleSuccessfulScan(worker, scanType, true, otp);
+                  } else {
+                    // No cached staff data — create minimal worker object
+                    handleSuccessfulScan(
+                      { id: wid, name: `Worker #${wid}`, employee_id: null, secret_token: '', status: 'active' },
+                      scanType,
+                      true,
+                      otp,
+                    );
+                  }
+                  resumeScanner();
+                  return;
+                }
+
+                const status = axiosErr.response?.status;
+                let message = 'Verification failed. Please try again.';
+                if (status === 403) {
+                  message = axiosErr.response?.data?.message || 'Access denied. Only representatives can scan worker QR codes.';
+                }
+                setLastResult({
+                  success: false,
+                  message,
+                });
+                triggerFeedback(false);
+                resumeScanner();
+              },
+            }
+          );
         } else {
           // Offline: validate locally using cached staff data
-          const worker = await getStaffByToken(code);
+          const worker = await getStaffById(wid);
           if (worker && worker.status === 'active') {
             // Mark as provisional since it's offline and will sync later
-            handleSuccessfulScan(worker, 'in', true); // TODO: toggle in/out
+            handleSuccessfulScan(worker, scanType, true, otp);
           } else {
             setLastResult({
               success: false,
-              message: worker ? 'Worker is inactive' : 'Invalid code',
+              message: worker ? 'Worker is inactive' : 'Worker not found in cache',
             });
             triggerFeedback(false);
           }
+          resumeScanner();
         }
       } catch (error) {
         console.error('Scan processing error:', error);
@@ -172,16 +286,10 @@ export default function ScannerPage() {
           message: 'Failed to process scan',
         });
         triggerFeedback(false);
+        resumeScanner();
       }
-
-      // Resume scanning after delay
-      setTimeout(async () => {
-        if (scannerRef.current?.getState() === Html5QrcodeScannerState.PAUSED) {
-          await scannerRef.current.resume();
-        }
-      }, 2000);
     },
-    [isOnline, verifyMutation, user]
+    [isOnline, verifyMutation, user, resumeScanner]
   );
 
   // Start scanner
@@ -214,8 +322,12 @@ export default function ScannerPage() {
 
   // Stop scanner
   const stopScanner = async () => {
-    if (scannerRef.current?.getState() === Html5QrcodeScannerState.SCANNING) {
-      await scannerRef.current.stop();
+    const state = scannerRef.current?.getState();
+    if (state === Html5QrcodeScannerState.PAUSED) {
+      scannerRef.current!.resume();
+    }
+    if (state === Html5QrcodeScannerState.PAUSED || state === Html5QrcodeScannerState.SCANNING) {
+      await scannerRef.current!.stop();
     }
     setIsScanning(false);
   };
@@ -223,8 +335,12 @@ export default function ScannerPage() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (scannerRef.current?.getState() === Html5QrcodeScannerState.SCANNING) {
-        scannerRef.current.stop();
+      const state = scannerRef.current?.getState();
+      if (state === Html5QrcodeScannerState.PAUSED) {
+        scannerRef.current!.resume();
+        scannerRef.current!.stop();
+      } else if (state === Html5QrcodeScannerState.SCANNING) {
+        scannerRef.current!.stop();
       }
     };
   }, []);
