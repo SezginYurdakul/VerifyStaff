@@ -91,8 +91,8 @@ const typeConfig = {
         badgeColor: 'bg-blue-100 text-blue-800',
     },
     inactive_workers: {
-        title: 'Inactive Workers This Week',
-        description: 'Active workers who have not recorded any attendance this week',
+        title: 'Inactive Workers (Last 7 Days)',
+        description: 'Active workers who have not recorded any attendance in the last 7 days',
         icon: UserX,
         iconBg: 'bg-gray-100',
         iconColor: 'text-gray-600',
@@ -260,7 +260,7 @@ function InactiveWorkerCard({ item }: { item: InactiveWorker }) {
                         )}
                         <div className="flex items-center gap-2 text-orange-600">
                             <AlertCircle className="w-4 h-4" />
-                            <span>No attendance records this week</span>
+                            <span>No attendance records in last 7 days</span>
                         </div>
                     </div>
                 </div>

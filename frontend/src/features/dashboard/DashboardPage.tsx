@@ -79,13 +79,11 @@ function AlertCard({
     title,
     count,
     severity,
-    items,
     onClick,
 }: {
     title: string;
     count: number;
     severity: 'high' | 'medium' | 'low' | 'gray';
-    items: Array<{ worker?: { name: string } | null; reason?: string; time?: string; name?: string }>;
     onClick?: () => void;
 }) {
     const severityColors = {
@@ -95,27 +93,29 @@ function AlertCard({
         gray: 'border-l-gray-400 bg-gray-50 hover:bg-gray-100',
     };
 
-    if (count === 0) return null;
+    const severityColorsEmpty = {
+        high: 'border-l-red-200 bg-red-50/50',
+        medium: 'border-l-yellow-200 bg-yellow-50/50',
+        low: 'border-l-blue-200 bg-blue-50/50',
+        gray: 'border-l-gray-200 bg-gray-50/50',
+    };
+
+    const isEmpty = count === 0;
 
     return (
         <div
-            className={`border-l-4 rounded-r-lg p-4 cursor-pointer transition-colors ${severityColors[severity]}`}
-            onClick={onClick}
+            className={`border-l-4 rounded-r-lg p-4 transition-colors ${
+                isEmpty ? severityColorsEmpty[severity] : `cursor-pointer ${severityColors[severity]}`
+            }`}
+            onClick={isEmpty ? undefined : onClick}
         >
             <div className="flex items-center justify-between mb-2">
-                <h4 className="font-medium text-gray-900">{title}</h4>
-                <span className="text-sm font-semibold text-gray-700">{count}</span>
+                <h4 className={`font-medium ${isEmpty ? 'text-gray-400' : 'text-gray-900'}`}>{title}</h4>
+                <span className={`text-2xl font-bold ${isEmpty ? 'text-gray-300' : 'text-gray-700'}`}>{count}</span>
             </div>
-            <ul className="space-y-1">
-                {items.slice(0, 3).map((item, idx) => (
-                    <li key={idx} className="text-sm text-gray-600">
-                        {item.worker?.name || item.name || 'Unknown'} {item.reason && `- ${item.reason}`}
-                    </li>
-                ))}
-                {count > 3 && (
-                    <li className="text-sm text-gray-500 font-medium">Click to see all {count}...</li>
-                )}
-            </ul>
+            {count > 0 && (
+                <p className="text-sm text-gray-500 font-medium">Click to see {count}...</p>
+            )}
         </div>
     );
 }
@@ -371,32 +371,26 @@ export default function DashboardPage() {
                             title="Flagged Records"
                             count={anomalies?.summary.flagged_count || 0}
                             severity="high"
-                            items={anomalies?.flagged || []}
                             onClick={() => navigate('/anomalies?type=flagged')}
                         />
                         <AlertCard
                             title="Missing Checkouts"
                             count={anomalies?.summary.missing_checkouts_count || 0}
                             severity="medium"
-                            items={anomalies?.missing_checkouts || []}
                             onClick={() => navigate('/anomalies?type=missing_checkouts')}
                         />
                         <AlertCard
-                            title="Late Arrivals (Week)"
+                            title="Late Arrivals This Week"
                             count={anomalies?.summary.late_arrivals_this_week || 0}
                             severity="low"
-                            items={anomalies?.late_arrivals || []}
                             onClick={() => navigate('/anomalies?type=late_arrivals')}
                         />
-                        {anomalies && anomalies.summary.inactive_workers > 0 && (
-                            <AlertCard
-                                title="Inactive Workers"
-                                count={anomalies.summary.inactive_workers}
-                                severity="gray"
-                                items={anomalies.inactive_workers}
-                                onClick={() => navigate('/anomalies?type=inactive_workers')}
-                            />
-                        )}
+                        <AlertCard
+                            title="Inactive Workers (7 Days)"
+                            count={anomalies?.summary.inactive_workers || 0}
+                            severity="gray"
+                            onClick={() => navigate('/anomalies?type=inactive_workers')}
+                        />
                     </div>
                 )}
             </Card>

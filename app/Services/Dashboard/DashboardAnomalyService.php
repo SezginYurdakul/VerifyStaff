@@ -13,11 +13,12 @@ class DashboardAnomalyService
     {
         $today = Carbon::today();
         $thisWeekStart = $today->copy()->startOfWeek();
+        $last7Days = $today->copy()->subDays(7);
 
         $flaggedLogs = $this->getFlaggedRecords($limit);
         $missingCheckouts = $this->getMissingCheckouts($thisWeekStart, $today, $limit);
         $lateArrivals = $this->getLateArrivals($thisWeekStart, $limit);
-        $inactiveWorkers = $this->getInactiveWorkers($thisWeekStart, $today, $limit);
+        $inactiveWorkers = $this->getInactiveWorkers($last7Days, $today, $limit);
 
         return [
             'summary' => [

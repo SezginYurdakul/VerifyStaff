@@ -329,7 +329,7 @@ class DashboardAnomalyServiceTest extends TestCase
         // Only Monday's checkin is missing checkout
         $this->assertEquals(1, $anomalies['summary']['missing_checkouts_count']);
         $this->assertEquals(1, $anomalies['summary']['late_arrivals_this_week']);
-        // worker3 has no activity this week
+        // worker3 has no activity in last 7 days
         $this->assertEquals(1, $anomalies['summary']['inactive_workers']);
     }
 
