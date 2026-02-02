@@ -48,10 +48,14 @@ export default function KioskSelectPage() {
     );
   }
 
+  const openKioskDisplay = (kioskCode: string) => {
+    window.open(`/kiosk/${kioskCode}/display`, '_blank');
+    navigate('/');
+  };
+
   // If only one active kiosk, go directly to display
   if (activeKiosks.length === 1) {
-    window.open(`/kiosk/${activeKiosks[0].code}/display`, '_blank');
-    navigate('/');
+    openKioskDisplay(activeKiosks[0].code);
     return null;
   }
 
@@ -71,7 +75,7 @@ export default function KioskSelectPage() {
           <Card
             key={kiosk.id}
             className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => window.open(`/kiosk/${kiosk.code}/display`, '_blank')}
+            onClick={() => openKioskDisplay(kiosk.code)}
           >
             <div className="flex items-center justify-between">
               <div>

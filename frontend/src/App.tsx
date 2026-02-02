@@ -13,8 +13,8 @@ import LoginPage from '@/features/auth/LoginPage';
 import RegisterPage from '@/features/auth/RegisterPage';
 
 // App pages
-import HomePage from '@/features/home/HomePage';
 import WorkerQRPage from '@/features/worker/WorkerQRPage';
+import WorkerDashboard from '@/features/worker/WorkerDashboard';
 import ScannerPage from '@/features/scanner/ScannerPage';
 
 // Kiosk pages
@@ -22,6 +22,9 @@ import { KioskDisplayPage, KioskSelectPage, WorkerKioskScanPage } from '@/featur
 
 // Settings pages
 import { SettingsPage } from '@/features/settings';
+
+// Dashboard pages
+import { DashboardPage, AnomaliesPage } from '@/features/dashboard';
 
 // Create query client
 const queryClient = new QueryClient({
@@ -42,6 +45,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+// Home page - redirects based on role
+function HomePage() {
+  const user = useAuthStore((state) => state.user);
+
+  // Worker goes to Worker Dashboard, Admin/Rep goes to Admin Dashboard
+  if (user?.role === 'worker') {
+    return <WorkerDashboard />;
+  }
+
+  return <DashboardPage />;
 }
 
 // Public route wrapper (redirect if authenticated)
@@ -165,6 +180,16 @@ function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <SettingsPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/anomalies"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <AnomaliesPage />
                 </AppLayout>
               </ProtectedRoute>
             }
