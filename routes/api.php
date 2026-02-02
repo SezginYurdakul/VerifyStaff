@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\KioskController;
 use App\Http\Controllers\Api\V1\ReportsController;
 use App\Http\Controllers\Api\V1\SettingsController;
@@ -37,6 +38,11 @@ Route::prefix('v1')->group(function () {
         // TOTP
         Route::get('totp/generate', [TotpController::class, 'generateCode']);
         Route::post('totp/verify', [TotpController::class, 'verifyCode']);
+
+        // Dashboard
+        Route::get('dashboard/overview', [DashboardController::class, 'overview']);
+        Route::get('dashboard/trends', [DashboardController::class, 'trends']);
+        Route::get('dashboard/anomalies', [DashboardController::class, 'anomalies']);
 
         // Reports - Single Worker
         Route::get('reports/summary/{workerId}/daily', [ReportsController::class, 'dailySummary']);
