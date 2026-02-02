@@ -344,7 +344,7 @@ class SyncTest extends TestCase
         $this->assertEquals('Worker not found', $errors[0]['reason']);
     }
 
-    public function test_sync_logs_fails_in_kiosk_mode(): void
+    public function test_sync_logs_works_in_kiosk_mode_but_flags(): void
     {
         $this->enableKioskMode();
 
@@ -370,11 +370,18 @@ class SyncTest extends TestCase
                 ],
             ]);
 
-        $response->assertStatus(403)
-            ->assertJson([
-                'message' => 'System is in kiosk mode. Representative sync is disabled.',
-                'attendance_mode' => 'kiosk',
-            ]);
+        // Kiosk mode allows sync but flags the record (no TOTP verification)
+        $response->assertOk()
+            ->assertJson(['synced_count' => 1]);
+
+        $this->assertDatabaseHas('attendance_logs', [
+            'worker_id' => $worker->id,
+            'flagged' => true,
+        ]);
+
+        // Verify flag_reason contains TOTP warning
+        $log = AttendanceLog::where('worker_id', $worker->id)->first();
+        $this->assertStringContainsString('TOTP not provided', $log->flag_reason);
     }
 
     public function test_worker_cannot_sync_logs(): void
@@ -440,11 +447,10 @@ class SyncTest extends TestCase
         $response->assertOk()
             ->assertJson(['synced_count' => 1]);
 
-        $this->assertDatabaseHas('attendance_logs', [
-            'worker_id' => $worker->id,
-            'flagged' => true,
-            'flag_reason' => 'Future timestamp detected',
-        ]);
+        // Flag reason may include multiple reasons (TOTP not provided + Future timestamp)
+        $log = AttendanceLog::where('worker_id', $worker->id)->first();
+        $this->assertTrue($log->flagged);
+        $this->assertStringContainsString('Future timestamp detected', $log->flag_reason);
     }
 
     public function test_sync_logs_auto_detects_type_with_toggle_mode(): void
