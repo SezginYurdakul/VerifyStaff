@@ -208,8 +208,13 @@ class ReportsController extends Controller
         $date = $request->date('date') ?? Carbon::today();
         $perPage = $request->integer('per_page', 50);
 
+        // Get worker IDs that have attendance on this date
+        $activeWorkerIds = AttendanceLog::whereDate('device_time', $date)
+            ->distinct('worker_id')
+            ->pluck('worker_id');
+
         $workers = User::where('role', 'worker')
-            ->where('status', 'active')
+            ->whereIn('id', $activeWorkerIds)
             ->select(['id', 'name', 'employee_id'])
             ->paginate($perPage);
 
@@ -245,10 +250,16 @@ class ReportsController extends Controller
 
         $date = $request->date('date') ?? Carbon::today();
         $weekStart = $date->copy()->startOfWeek();
+        $weekEnd = $weekStart->copy()->endOfWeek();
         $perPage = $request->integer('per_page', 50);
 
+        // Get worker IDs that have attendance in this week
+        $activeWorkerIds = AttendanceLog::whereBetween('device_time', [$weekStart, $weekEnd])
+            ->distinct('worker_id')
+            ->pluck('worker_id');
+
         $workers = User::where('role', 'worker')
-            ->where('status', 'active')
+            ->whereIn('id', $activeWorkerIds)
             ->select(['id', 'name', 'employee_id'])
             ->paginate($perPage);
 
@@ -284,7 +295,7 @@ class ReportsController extends Controller
         return response()->json([
             'period' => 'weekly',
             'week_start' => $weekStart->format('Y-m-d'),
-            'week_end' => $weekStart->copy()->endOfWeek()->format('Y-m-d'),
+            'week_end' => $weekEnd->format('Y-m-d'),
             'total' => $workers->total(),
             'per_page' => $workers->perPage(),
             'current_page' => $workers->currentPage(),
@@ -302,10 +313,16 @@ class ReportsController extends Controller
         }
 
         $monthStart = $this->parseMonthStart($request);
+        $monthEnd = $monthStart->copy()->endOfMonth();
         $perPage = $request->integer('per_page', 50);
 
+        // Get worker IDs that have attendance in this month
+        $activeWorkerIds = AttendanceLog::whereBetween('device_time', [$monthStart, $monthEnd])
+            ->distinct('worker_id')
+            ->pluck('worker_id');
+
         $workers = User::where('role', 'worker')
-            ->where('status', 'active')
+            ->whereIn('id', $activeWorkerIds)
             ->select(['id', 'name', 'employee_id'])
             ->paginate($perPage);
 
@@ -343,7 +360,7 @@ class ReportsController extends Controller
             'period' => 'monthly',
             'month' => $monthStart->format('Y-m'),
             'month_start' => $monthStart->format('Y-m-d'),
-            'month_end' => $monthStart->copy()->endOfMonth()->format('Y-m-d'),
+            'month_end' => $monthEnd->format('Y-m-d'),
             'total' => $workers->total(),
             'per_page' => $workers->perPage(),
             'current_page' => $workers->currentPage(),

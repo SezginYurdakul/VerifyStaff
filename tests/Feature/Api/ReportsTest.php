@@ -391,10 +391,20 @@ class ReportsTest extends TestCase
 
     public function test_admin_can_get_all_workers_daily_summary(): void
     {
-        User::factory()->count(3)->create([
+        $workers = User::factory()->count(3)->create([
             'role' => 'worker',
             'status' => 'active',
         ]);
+
+        // Create attendance logs for today for these workers
+        $today = now();
+        foreach ($workers as $worker) {
+            AttendanceLog::factory()->create([
+                'worker_id' => $worker->id,
+                'type' => 'in',
+                'device_time' => $today,
+            ]);
+        }
 
         $admin = User::factory()->create([
             'role' => 'admin',

@@ -2,7 +2,7 @@ import { type ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
-import { BarChart3, LogOut, Camera, Monitor, QrCode, Settings } from 'lucide-react';
+import { BarChart3, LogOut, Camera, Monitor, QrCode, Settings, FileText } from 'lucide-react';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -91,6 +91,12 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   icon={BarChart3}
                   label="Dashboard"
                   isActive={location.pathname === '/'}
+                />
+                <NavItem
+                  to="/reports"
+                  icon={FileText}
+                  label="Reports"
+                  isActive={location.pathname === '/reports' || location.pathname.startsWith('/reports/')}
                 />
                 <NavItem
                   to="/scan"

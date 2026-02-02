@@ -26,6 +26,9 @@ import { SettingsPage } from '@/features/settings';
 // Dashboard pages
 import { DashboardPage, AnomaliesPage } from '@/features/dashboard';
 
+// Reports pages
+import { ReportsPage, WorkerDetailPage } from '@/features/reports';
+
 // Create query client
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +42,16 @@ const queryClient = new QueryClient({
 // Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
+
+  // Wait for hydration before making auth decisions
+  if (!hasHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -62,6 +75,16 @@ function HomePage() {
 // Public route wrapper (redirect if authenticated)
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
+
+  // Wait for hydration before making auth decisions
+  if (!hasHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -190,6 +213,26 @@ function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <AnomaliesPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <ReportsPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports/worker/:workerId"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <WorkerDetailPage />
                 </AppLayout>
               </ProtectedRoute>
             }
