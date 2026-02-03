@@ -10,129 +10,6 @@ class AuthTest extends TestCase
 {
     use RefreshDatabase;
 
-    // ==================== Register Tests ====================
-
-    public function test_user_can_register_with_valid_data(): void
-    {
-        $response = $this->postJson('/api/v1/auth/register', [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'phone' => '5551234567',
-            'employee_id' => 'EMP001',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
-
-        $response->assertStatus(201)
-            ->assertJsonStructure([
-                'message',
-                'user' => ['id', 'name', 'email', 'phone', 'employee_id', 'role', 'status'],
-                'token',
-            ])
-            ->assertJson([
-                'message' => 'User registered successfully',
-                'user' => [
-                    'name' => 'Test User',
-                    'email' => 'test@example.com',
-                ],
-            ]);
-
-        $this->assertDatabaseHas('users', [
-            'email' => 'test@example.com',
-            'employee_id' => 'EMP001',
-        ]);
-    }
-
-    public function test_register_fails_with_duplicate_email(): void
-    {
-        User::factory()->create(['email' => 'existing@example.com']);
-
-        $response = $this->postJson('/api/v1/auth/register', [
-            'name' => 'Test User',
-            'email' => 'existing@example.com',
-            'phone' => '5551234567',
-            'employee_id' => 'EMP001',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
-            ->assertJsonPath('error.details.email.0', fn ($value) => str_contains($value, 'taken'));
-    }
-
-    public function test_register_fails_with_duplicate_phone(): void
-    {
-        User::factory()->create(['phone' => '5551234567']);
-
-        $response = $this->postJson('/api/v1/auth/register', [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'phone' => '5551234567',
-            'employee_id' => 'EMP001',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
-            ->assertJsonPath('error.details.phone.0', fn ($value) => str_contains($value, 'taken'));
-    }
-
-    public function test_register_fails_with_duplicate_employee_id(): void
-    {
-        User::factory()->create(['employee_id' => 'EMP001']);
-
-        $response = $this->postJson('/api/v1/auth/register', [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'phone' => '5551234567',
-            'employee_id' => 'EMP001',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
-            ->assertJsonPath('error.details.employee_id.0', fn ($value) => str_contains($value, 'taken'));
-    }
-
-    public function test_register_fails_without_required_fields(): void
-    {
-        $response = $this->postJson('/api/v1/auth/register', []);
-
-        $response->assertStatus(422)
-            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
-            ->assertJson([
-                'success' => false,
-            ]);
-
-        $details = $response->json('error.details');
-        $this->assertArrayHasKey('name', $details);
-        $this->assertArrayHasKey('password', $details);
-        // At least one identifier (email, phone, or employee_id) is required
-        $this->assertArrayHasKey('identifier', $details);
-    }
-
-    public function test_register_creates_user_with_default_worker_role(): void
-    {
-        $response = $this->postJson('/api/v1/auth/register', [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'phone' => '5551234567',
-            'employee_id' => 'EMP001',
-            'password' => 'password123',
-            'password_confirmation' => 'password123',
-        ]);
-
-        $response->assertStatus(201);
-
-        $this->assertDatabaseHas('users', [
-            'email' => 'test@example.com',
-            'role' => 'worker',
-        ]);
-    }
-
     // ==================== Login Tests ====================
 
     public function test_user_can_login_with_email(): void
@@ -239,6 +116,24 @@ class AuthTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'VALIDATION_ERROR')
             ->assertJsonPath('error.details.identifier.0', 'Your account is not active.');
+    }
+
+    public function test_login_fails_for_user_without_password(): void
+    {
+        // User created via admin but hasn't set password yet
+        User::factory()->create([
+            'email' => 'test@example.com',
+            'password' => null,
+            'status' => 'active',
+        ]);
+
+        $response = $this->postJson('/api/v1/auth/login', [
+            'identifier' => 'test@example.com',
+            'password' => 'anypassword',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
     }
 
     // ==================== Logout Tests ====================

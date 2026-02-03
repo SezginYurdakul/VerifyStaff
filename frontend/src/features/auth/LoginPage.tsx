@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { login } from '@/api/auth';
@@ -74,11 +74,8 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-gray-600">
-        Don't have an account?{' '}
-        <Link to="/register" className="text-blue-600 hover:underline">
-          Register
-        </Link>
+      <p className="mt-6 text-center text-sm text-gray-500">
+        Contact your administrator if you need an account.
       </p>
     </Card>
   );
