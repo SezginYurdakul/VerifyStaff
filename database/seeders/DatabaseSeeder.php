@@ -31,9 +31,9 @@ class DatabaseSeeder extends Seeder
 
         // Representative User
         $rep = User::create([
-            'name' => 'Ahmet Yilmaz',
+            'name' => 'James Wilson',
             'email' => 'rep@verifystaff.com',
-            'phone' => '+905550000002',
+            'phone' => '+31612345678',
             'employee_id' => 'REP001',
             'password' => 'password123',
             'role' => 'representative',
@@ -44,33 +44,33 @@ class DatabaseSeeder extends Seeder
         // Workers
         $workers = [
             [
-                'name' => 'Mehmet Demir',
-                'email' => 'mehmet@example.com',
-                'phone' => '+905551000001',
+                'name' => 'Jan de Vries',
+                'email' => 'jan@example.com',
+                'phone' => '+31687654321',
                 'employee_id' => 'EMP001',
             ],
             [
-                'name' => 'Ayse Kaya',
-                'email' => 'ayse@example.com',
-                'phone' => '+905551000002',
+                'name' => 'Emma Johnson',
+                'email' => 'emma@example.com',
+                'phone' => '+447911123456',
                 'employee_id' => 'EMP002',
             ],
             [
-                'name' => 'Fatma Celik',
-                'email' => 'fatma@example.com',
-                'phone' => '+905551000003',
+                'name' => 'Pieter van der Berg',
+                'email' => 'pieter@example.com',
+                'phone' => '+31698765432',
                 'employee_id' => 'EMP003',
             ],
             [
-                'name' => 'Ali Ozturk',
-                'email' => 'ali@example.com',
-                'phone' => '+905551000004',
+                'name' => 'Sophie Williams',
+                'email' => 'sophie@example.com',
+                'phone' => '+447922234567',
                 'employee_id' => 'EMP004',
             ],
             [
-                'name' => 'Zeynep Arslan',
-                'email' => 'zeynep@example.com',
-                'phone' => '+905551000005',
+                'name' => 'Daan Bakker',
+                'email' => 'daan@example.com',
+                'phone' => '+31654321098',
                 'employee_id' => 'EMP005',
             ],
         ];
