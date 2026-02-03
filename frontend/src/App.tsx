@@ -10,7 +10,7 @@ import AppLayout from '@/components/layouts/AppLayout';
 
 // Auth pages
 import LoginPage from '@/features/auth/LoginPage';
-import RegisterPage from '@/features/auth/RegisterPage';
+import SetPasswordPage from '@/features/auth/SetPasswordPage';
 
 // App pages
 import WorkerQRPage from '@/features/worker/WorkerQRPage';
@@ -28,6 +28,9 @@ import { DashboardPage, AnomaliesPage } from '@/features/dashboard';
 
 // Reports pages
 import { ReportsPage, WorkerDetailPage } from '@/features/reports';
+
+// Users pages
+import { UsersPage } from '@/features/users';
 
 // Create query client
 const queryClient = new QueryClient({
@@ -136,13 +139,11 @@ function App() {
             }
           />
           <Route
-            path="/register"
+            path="/set-password"
             element={
-              <PublicRoute>
-                <AuthLayout>
-                  <RegisterPage />
-                </AuthLayout>
-              </PublicRoute>
+              <AuthLayout>
+                <SetPasswordPage />
+              </AuthLayout>
             }
           />
 
@@ -233,6 +234,16 @@ function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <WorkerDetailPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <UsersPage />
                 </AppLayout>
               </ProtectedRoute>
             }

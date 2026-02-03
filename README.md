@@ -111,11 +111,26 @@ php artisan serve
 ### Authentication
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/auth/register` | Register new user |
 | POST | `/api/v1/auth/login` | Login |
 | POST | `/api/v1/auth/logout` | Logout |
 | GET | `/api/v1/auth/me` | Get current user |
 | POST | `/api/v1/auth/refresh` | Refresh token |
+
+### User Invitations
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/invite/validate` | Validate invite token |
+| POST | `/api/v1/invite/accept` | Accept invite and set password |
+
+### Users (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/users` | List all users |
+| POST | `/api/v1/users` | Create user and send invite |
+| GET | `/api/v1/users/{id}` | Get user details |
+| PUT | `/api/v1/users/{id}` | Update user |
+| DELETE | `/api/v1/users/{id}` | Delete user |
+| POST | `/api/v1/users/{id}/resend-invite` | Resend invitation |
 
 ### Sync (Representative Mode)
 | Method | Endpoint | Description |

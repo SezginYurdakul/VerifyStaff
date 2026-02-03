@@ -17,6 +17,7 @@ class UserResource extends JsonResource
             'employee_id' => $this->employee_id,
             'role' => $this->role,
             'status' => $this->status,
+            'invite_accepted_at' => $this->invite_accepted_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

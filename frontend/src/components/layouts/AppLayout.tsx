@@ -2,7 +2,7 @@ import { type ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
-import { BarChart3, LogOut, Camera, Monitor, QrCode, Settings, FileText } from 'lucide-react';
+import { BarChart3, LogOut, Camera, Monitor, QrCode, Settings, FileText, Users } from 'lucide-react';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -135,12 +135,20 @@ export default function AppLayout({ children }: AppLayoutProps) {
               </>
             )}
             {isAdmin && (
-              <NavItem
-                to="/settings"
-                icon={Settings}
-                label="Settings"
-                isActive={location.pathname === '/settings'}
-              />
+              <>
+                <NavItem
+                  to="/users"
+                  icon={Users}
+                  label="Users"
+                  isActive={location.pathname === '/users'}
+                />
+                <NavItem
+                  to="/settings"
+                  icon={Settings}
+                  label="Settings"
+                  isActive={location.pathname === '/settings'}
+                />
+              </>
             )}
 
             {/* Divider */}

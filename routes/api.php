@@ -3,18 +3,23 @@
 use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\InviteController;
 use App\Http\Controllers\Api\V1\KioskController;
 use App\Http\Controllers\Api\V1\ReportsController;
 use App\Http\Controllers\Api\V1\SettingsController;
 use App\Http\Controllers\Api\V1\SyncController;
 use App\Http\Controllers\Api\V1\TotpController;
+use App\Http\Controllers\Api\V1\UsersController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     // Public routes
-    Route::post('auth/register', [AuthController::class, 'register']);
     Route::post('auth/login', [AuthController::class, 'login']);
     Route::get('time', [SyncController::class, 'getServerTime']);
+
+    // Invite - public endpoints for setting password
+    Route::post('invite/validate', [InviteController::class, 'validate']);
+    Route::post('invite/accept', [InviteController::class, 'accept']);
 
     // Kiosk - public endpoint for kiosk device to generate QR code
     Route::get('kiosk/{kioskCode}/code', [KioskController::class, 'generateCode']);
@@ -80,5 +85,13 @@ Route::prefix('v1')->group(function () {
         Route::get('kiosks/{kioskCode}', [KioskController::class, 'show']);
         Route::put('kiosks/{kioskCode}', [KioskController::class, 'update']);
         Route::post('kiosks/{kioskCode}/regenerate-token', [KioskController::class, 'regenerateToken']);
+
+        // User management - Admin only
+        Route::get('users', [UsersController::class, 'index']);
+        Route::post('users', [UsersController::class, 'store']);
+        Route::get('users/{user}', [UsersController::class, 'show']);
+        Route::put('users/{user}', [UsersController::class, 'update']);
+        Route::delete('users/{user}', [UsersController::class, 'destroy']);
+        Route::post('users/{user}/resend-invite', [UsersController::class, 'resendInvite']);
     });
 });

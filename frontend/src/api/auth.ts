@@ -1,13 +1,34 @@
 import api from '@/lib/api';
-import type { LoginRequest, RegisterRequest, AuthResponse, User } from '@/types';
+import type { LoginRequest, AuthResponse, User } from '@/types';
 
 export async function login(data: LoginRequest): Promise<AuthResponse> {
   const response = await api.post<AuthResponse>('/auth/login', data);
   return response.data;
 }
 
-export async function register(data: RegisterRequest): Promise<AuthResponse> {
-  const response = await api.post<AuthResponse>('/auth/register', data);
+// Invite validation and acceptance
+export interface InviteValidateResponse {
+  valid: boolean;
+  message?: string;
+  user?: {
+    name: string;
+    email: string;
+  };
+}
+
+export interface AcceptInviteRequest {
+  token: string;
+  password: string;
+  password_confirmation: string;
+}
+
+export async function validateInvite(token: string): Promise<InviteValidateResponse> {
+  const response = await api.post<InviteValidateResponse>('/invite/validate', { token });
+  return response.data;
+}
+
+export async function acceptInvite(data: AcceptInviteRequest): Promise<AuthResponse> {
+  const response = await api.post<AuthResponse>('/invite/accept', data);
   return response.data;
 }
 
