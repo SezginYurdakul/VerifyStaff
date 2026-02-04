@@ -166,8 +166,10 @@ php artisan serve
 |--------|----------|-------------|
 | GET | `/api/v1/settings` | List settings |
 | PUT | `/api/v1/settings/{key}` | Update setting |
-| GET | `/api/v1/settings/work-hours` | Get work hours |
-| PUT | `/api/v1/settings/config/attendance-mode` | Change mode |
+| GET | `/api/v1/settings/work-hours` | Get work hours config |
+| PUT | `/api/v1/settings/config/attendance-mode` | Change attendance mode |
+| PUT | `/api/v1/settings/config/shifts` | Update shift definitions |
+| PUT | `/api/v1/settings/config/working-days` | Update working days |
 
 ### Kiosks (Admin)
 | Method | Endpoint | Description |
@@ -248,7 +250,9 @@ tests/
 | work_end_time | 18:00 | Work day end |
 | break_duration_minutes | 60 | Break duration |
 | late_threshold_minutes | 15 | Grace period for late arrival |
+| early_departure_threshold_minutes | 15 | Grace period for early departure |
 | attendance_mode | representative | Default attendance mode |
+| shifts_enabled | false | Enable multiple shift support |
 | timezone | Europe/Istanbul | System timezone |
 
 ### Environment Variables

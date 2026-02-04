@@ -45,8 +45,10 @@ The system operates on a **dual-mode validation model**:
     - `settings`: id, key, group, value, type, description (seeded with defaults)
     - `kiosks`: id, name, code, secret_token, location, latitude/longitude, status
 - [x] **Authentication:** Laravel Sanctum for secure mobile-to-server communication
-    - Register (email/phone/employee_id)
-    - Login with multiple identifiers
+    - Admin-driven user registration (no public registration)
+    - Email invitation with secure token
+    - Password setting via invite link
+    - Login with multiple identifiers (email/phone/employee_id)
     - Token refresh
     - Logout
 - [x] **Core APIs:**
@@ -88,38 +90,53 @@ The system operates on a **dual-mode validation model**:
 
 
 
-### 2. Frontend & PWA Integration (React)
+### 2. Frontend & PWA Integration (React) 🚧 IN PROGRESS
 *Focus: Mobile experience and Offline engine.*
 
-- [ ] **PWA Configuration:** Setup `vite-plugin-pwa` to allow "Add to Home Screen" and offline asset caching.
-- [ ] **Service Workers:** Logic to ensure the app opens instantly even in airplane mode.
-- [ ] **IndexedDB Setup:** Creating a local mirror of the staff database to allow offline verification.
-- [ ] **UI Components:**
-    - Login/Register screens
-    - Worker QR code display
-    - Representative scanner interface
-    - Kiosk mode display
-    - Admin dashboard
+- [x] **PWA Configuration:** Setup `vite-plugin-pwa` to allow "Add to Home Screen" and offline asset caching.
+- [x] **Service Workers:** Logic to ensure the app opens instantly even in airplane mode.
+- [x] **IndexedDB Setup:** Creating a local mirror of the staff database to allow offline verification.
+- [x] **UI Components:**
+    - [x] Login screen (no public registration - admin invite only)
+    - [x] Worker QR code display with TOTP countdown
+    - [x] Representative scanner interface with offline support
+    - [x] Kiosk mode display
+    - [x] Admin dashboard with anomaly alerts
+    - [x] Reports page with filtering and export
+    - [x] Anomalies detail page
+    - [x] **User Management (Admin):**
+        - [x] User list with role/status filters
+        - [x] Create user with email invite
+        - [x] Edit/Delete users
+        - [x] Resend invitation
+        - [x] Set password page (invite flow)
+    - [x] **Settings Pages:**
+        - [x] General settings (QR refresh, auto checkout)
+        - [x] Attendance mode settings (representative/kiosk, toggle mode)
+        - [x] Shifts settings (work hours, multiple shifts, thresholds)
+        - [x] Kiosk management
 
 
 
-### 3. Dynamic QR & Security Logic
+### 3. Dynamic QR & Security Logic ✅ COMPLETED
 *Focus: Preventing fraud and screenshots.*
 
 - [x] **Worker Logic (Backend Complete):**
     - TOTP-based code generation (refreshes every 30s)
     - ±1 window tolerance for clock drift
-- [ ] **Worker Logic (Frontend):**
+- [x] **Worker Logic (Frontend):**
     - QR code display with visual countdown
     - Visual "Live Feed" indicator (prevents using old screenshots)
-- [ ] **Representative Logic:**
+    - Auto-refresh countdown timer
+- [x] **Representative Logic:**
     - High-speed camera integration using `html5-qrcode`
     - **Local Validation:** Comparing the QR timestamp with the representative's device clock
-- [ ] **Feedback System:** Haptic (vibration) and visual (green/red) feedback for scan results
+    - Offline queue for pending syncs
+- [x] **Feedback System:** Visual (green/red) feedback for scan results, success/error messages
 
 
 
-### 4. Testing & Sync Mechanism
+### 4. Testing & Sync Mechanism 🚧 IN PROGRESS
 *Focus: Data integrity and Deployment.*
 
 - [x] **Conflict Resolution (Backend):**
@@ -127,7 +144,7 @@ The system operates on a **dual-mode validation model**:
     - Duplicate detection with configurable time window
     - Flagging system for anomalies
 - [x] **Toggle Mode:** Support for alternating check-in/check-out based on last status
-- [ ] **Auto-Sync (Frontend):** Background logic to detect internet and push data automatically
+- [x] **Auto-Sync (Frontend):** Background logic to detect internet and push data automatically
 - [ ] **Deployment:**
     - VPS hosting for Laravel
     - Deployment of React PWA
@@ -235,11 +252,26 @@ event_id = SHA256(worker_id + rep_id + device_timestamp + scan_type)
 ### Authentication
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/v1/auth/register` | Register new user |
 | POST | `/api/v1/auth/login` | Login with email/phone/employee_id |
 | POST | `/api/v1/auth/logout` | Logout (revoke token) |
 | GET | `/api/v1/auth/me` | Get current user |
 | POST | `/api/v1/auth/refresh` | Refresh token |
+
+### User Invitations
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/invite/validate` | Validate invite token |
+| POST | `/api/v1/invite/accept` | Accept invite and set password |
+
+### Users (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/users` | List all users |
+| POST | `/api/v1/users` | Create user and send invite |
+| GET | `/api/v1/users/{id}` | Get user details |
+| PUT | `/api/v1/users/{id}` | Update user |
+| DELETE | `/api/v1/users/{id}` | Delete user |
+| POST | `/api/v1/users/{id}/resend-invite` | Resend invitation |
 
 ### Sync (Representative Mode)
 | Method | Endpoint | Description |
