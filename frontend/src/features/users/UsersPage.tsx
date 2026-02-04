@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getUsers, createUser, updateUser, deleteUser, resendInvite } from '@/api/users';
+import { getUsers, createUser, updateUser, deleteUser, resendInvite, restoreUser, forceDeleteUser } from '@/api/users';
+import { getDepartments } from '@/api/departments';
 import type { CreateUserRequest, UpdateUserRequest } from '@/api/users';
 import type { User, UserRole, UserStatus, ApiError } from '@/types';
 import { Button, Input, Card, Modal } from '@/components/ui';
@@ -11,11 +12,18 @@ import {
   Pencil,
   Trash2,
   RefreshCw,
+  RotateCcw,
+  Archive,
   Shield,
   UserCheck,
   Briefcase,
   AlertCircle,
+  QrCode,
+  Printer,
+  Download,
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import { useRef } from 'react';
 import type { AxiosError } from 'axios';
 
 const ROLES: { value: UserRole; label: string; icon: typeof Shield }[] = [
@@ -60,6 +68,7 @@ interface UserFormData {
   email: string;
   phone: string;
   employee_id: string;
+  department_id: number | null;
   role: UserRole;
   status: UserStatus;
 }
@@ -69,6 +78,7 @@ const emptyFormData: UserFormData = {
   email: '',
   phone: '',
   employee_id: '',
+  department_id: null,
   role: 'worker',
   status: 'active',
 };
@@ -78,25 +88,38 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
   const [statusFilter, setStatusFilter] = useState<UserStatus | ''>('');
+  const [departmentFilter, setDepartmentFilter] = useState<number | ''>('');
+  const [showTrashed, setShowTrashed] = useState(false);
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isForceDeleteModalOpen, setIsForceDeleteModalOpen] = useState(false);
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [formData, setFormData] = useState<UserFormData>(emptyFormData);
   const [formError, setFormError] = useState('');
+  const printRef = useRef<HTMLDivElement>(null);
 
   // Fetch users
   const { data, isLoading, error } = useQuery({
-    queryKey: ['users', page, roleFilter, statusFilter],
+    queryKey: ['users', page, roleFilter, statusFilter, departmentFilter, showTrashed],
     queryFn: () =>
       getUsers({
         page,
         per_page: 20,
         role: roleFilter || undefined,
-        status: statusFilter || undefined,
+        status: showTrashed ? undefined : statusFilter || undefined,
+        department_id: departmentFilter || undefined,
+        trashed: showTrashed || undefined,
       }),
+  });
+
+  // Fetch departments for the dropdown
+  const { data: departmentsData } = useQuery({
+    queryKey: ['departments'],
+    queryFn: () => getDepartments(),
   });
 
   // Create user mutation
@@ -146,6 +169,24 @@ export default function UsersPage() {
     },
   });
 
+  // Restore user mutation
+  const restoreMutation = useMutation({
+    mutationFn: restoreUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  // Force delete user mutation
+  const forceDeleteMutation = useMutation({
+    mutationFn: forceDeleteUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setIsForceDeleteModalOpen(false);
+      setSelectedUser(null);
+    },
+  });
+
   const handleOpenCreate = () => {
     setFormData(emptyFormData);
     setFormError('');
@@ -159,6 +200,7 @@ export default function UsersPage() {
       email: user.email,
       phone: user.phone || '',
       employee_id: user.employee_id || '',
+      department_id: user.department_id,
       role: user.role,
       status: user.status,
     });
@@ -180,6 +222,7 @@ export default function UsersPage() {
     };
     if (formData.phone) createData.phone = formData.phone;
     if (formData.employee_id) createData.employee_id = formData.employee_id;
+    if (formData.department_id) createData.department_id = formData.department_id;
     createMutation.mutate(createData);
   };
 
@@ -191,6 +234,7 @@ export default function UsersPage() {
       email: formData.email,
       role: formData.role,
       status: formData.status,
+      department_id: formData.department_id,
     };
     // Only include phone and employee_id if they have values
     if (formData.phone) updateData.phone = formData.phone;
@@ -210,6 +254,138 @@ export default function UsersPage() {
 
   const handleResendInvite = (user: User) => {
     resendMutation.mutate(user.id);
+  };
+
+  const handleRestore = (user: User) => {
+    restoreMutation.mutate(user.id);
+  };
+
+  const handleOpenForceDelete = (user: User) => {
+    setSelectedUser(user);
+    setIsForceDeleteModalOpen(true);
+  };
+
+  const handleForceDelete = () => {
+    if (!selectedUser) return;
+    forceDeleteMutation.mutate(selectedUser.id);
+  };
+
+  const handleOpenQR = (user: User) => {
+    setSelectedUser(user);
+    setIsQRModalOpen(true);
+  };
+
+  const getInviteUrl = (token: string) => {
+    const baseUrl = window.location.origin;
+    return `${baseUrl}/set-password?token=${token}`;
+  };
+
+  const handlePrint = () => {
+    if (!printRef.current) return;
+    const printContent = printRef.current.innerHTML;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>VerifyStaff - Invite QR Code</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              min-height: 100vh;
+              margin: 0;
+              padding: 20px;
+              box-sizing: border-box;
+            }
+            .print-card {
+              border: 2px solid #e5e7eb;
+              border-radius: 16px;
+              padding: 32px;
+              text-align: center;
+              max-width: 400px;
+            }
+            .logo {
+              font-size: 24px;
+              font-weight: bold;
+              color: #2563eb;
+              margin-bottom: 8px;
+            }
+            .title {
+              font-size: 14px;
+              color: #6b7280;
+              margin-bottom: 24px;
+            }
+            .qr-container {
+              background: white;
+              padding: 16px;
+              border-radius: 12px;
+              display: inline-block;
+              margin-bottom: 24px;
+            }
+            .user-name {
+              font-size: 20px;
+              font-weight: 600;
+              color: #111827;
+              margin-bottom: 4px;
+            }
+            .user-role {
+              font-size: 14px;
+              color: #6b7280;
+              margin-bottom: 16px;
+            }
+            .instructions {
+              font-size: 12px;
+              color: #9ca3af;
+              line-height: 1.5;
+            }
+            .step {
+              margin-bottom: 4px;
+            }
+            @media print {
+              body { padding: 0; }
+              .print-card { border: 1px solid #d1d5db; }
+            }
+          </style>
+        </head>
+        <body>
+          ${printContent}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  const handleDownloadQR = () => {
+    if (!selectedUser?.invite_token) return;
+    const svg = document.getElementById('invite-qr-code');
+    if (!svg) return;
+
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx?.drawImage(img, 0, 0);
+      const pngUrl = canvas.toDataURL('image/png');
+      const downloadLink = document.createElement('a');
+      downloadLink.href = pngUrl;
+      downloadLink.download = `verifystaff-invite-${selectedUser.name.replace(/\s+/g, '-').toLowerCase()}.png`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+    };
+
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
   };
 
   if (error) {
@@ -244,7 +420,7 @@ export default function UsersPage() {
 
       {/* Filters */}
       <Card>
-        <div className="flex flex-wrap gap-4">
+        <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
             <select
@@ -263,23 +439,59 @@ export default function UsersPage() {
               ))}
             </select>
           </div>
+          {!showTrashed && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as UserStatus | '');
+                  setPage(1);
+                }}
+                className="block w-40 rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              >
+                <option value="">All Statuses</option>
+                {STATUSES.map((status) => (
+                  <option key={status.value} value={status.value}>
+                    {status.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
             <select
-              value={statusFilter}
+              value={departmentFilter}
               onChange={(e) => {
-                setStatusFilter(e.target.value as UserStatus | '');
+                setDepartmentFilter(e.target.value ? parseInt(e.target.value) : '');
                 setPage(1);
               }}
-              className="block w-40 rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              className="block w-44 rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
             >
-              <option value="">All Statuses</option>
-              {STATUSES.map((status) => (
-                <option key={status.value} value={status.value}>
-                  {status.label}
+              <option value="">All Departments</option>
+              {departmentsData?.departments.map((dept) => (
+                <option key={dept.id} value={dept.id}>
+                  {dept.name}
                 </option>
               ))}
             </select>
+          </div>
+          <div className="ml-auto">
+            <button
+              onClick={() => {
+                setShowTrashed(!showTrashed);
+                setPage(1);
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+                showTrashed
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <Archive className="w-4 h-4" />
+              {showTrashed ? 'Showing Deleted' : 'Show Deleted'}
+            </button>
           </div>
         </div>
       </Card>
@@ -298,6 +510,7 @@ export default function UsersPage() {
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">User</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Role</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Department</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Employee ID</th>
                     <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
@@ -305,10 +518,17 @@ export default function UsersPage() {
                 </thead>
                 <tbody>
                   {data?.users.map((user) => (
-                    <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <tr
+                      key={user.id}
+                      className={`border-b border-gray-100 ${
+                        showTrashed ? 'bg-red-50/50' : 'hover:bg-gray-50'
+                      }`}
+                    >
                       <td className="py-3 px-4">
                         <div>
-                          <p className="font-medium text-gray-900">{user.name}</p>
+                          <p className={`font-medium ${showTrashed ? 'text-gray-500' : 'text-gray-900'}`}>
+                            {user.name}
+                          </p>
                           <p className="text-sm text-gray-500">{user.email}</p>
                           {user.phone && <p className="text-sm text-gray-400">{user.phone}</p>}
                         </div>
@@ -316,37 +536,81 @@ export default function UsersPage() {
                       <td className="py-3 px-4">
                         <RoleBadge role={user.role} />
                       </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">
+                        {user.department ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            {user.department.name}
+                          </span>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
                       <td className="py-3 px-4">
-                        <StatusBadge status={user.status} />
+                        {showTrashed ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            Deleted
+                          </span>
+                        ) : (
+                          <StatusBadge status={user.status} />
+                        )}
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-600">{user.employee_id || '-'}</td>
                       <td className="py-3 px-4">
-                        <div className="flex items-center justify-end gap-2">
-                          {!user.invite_accepted_at && (
+                        {showTrashed ? (
+                          <div className="flex items-center justify-end gap-2">
                             <button
-                              onClick={() => handleResendInvite(user)}
-                              disabled={resendMutation.isPending}
-                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Resend Invitation"
+                              onClick={() => handleRestore(user)}
+                              disabled={restoreMutation.isPending}
+                              className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                              title="Restore User"
                             >
-                              <Mail className="w-4 h-4" />
+                              <RotateCcw className="w-4 h-4" />
                             </button>
-                          )}
-                          <button
-                            onClick={() => handleOpenEdit(user)}
-                            className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-                            title="Edit User"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenDelete(user)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete User"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                            <button
+                              onClick={() => handleOpenForceDelete(user)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Permanently Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2">
+                            {!user.invite_accepted_at && user.invite_token && (
+                              <button
+                                onClick={() => handleOpenQR(user)}
+                                className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                title="Print Invite QR"
+                              >
+                                <QrCode className="w-4 h-4" />
+                              </button>
+                            )}
+                            {!user.invite_accepted_at && (
+                              <button
+                                onClick={() => handleResendInvite(user)}
+                                disabled={resendMutation.isPending}
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Resend Invitation"
+                              >
+                                <Mail className="w-4 h-4" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleOpenEdit(user)}
+                              className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                              title="Edit User"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleOpenDelete(user)}
+                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete User"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -443,6 +707,22 @@ export default function UsersPage() {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department (Optional)</label>
+            <select
+              value={formData.department_id || ''}
+              onChange={(e) => setFormData({ ...formData, department_id: e.target.value ? parseInt(e.target.value) : null })}
+              className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            >
+              <option value="">No Department</option>
+              {departmentsData?.departments.map((dept) => (
+                <option key={dept.id} value={dept.id}>
+                  {dept.name} ({dept.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex gap-3 pt-4">
             <Button type="button" variant="outline" className="flex-1" onClick={() => setIsCreateModalOpen(false)}>
               Cancel
@@ -520,6 +800,22 @@ export default function UsersPage() {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+            <select
+              value={formData.department_id || ''}
+              onChange={(e) => setFormData({ ...formData, department_id: e.target.value ? parseInt(e.target.value) : null })}
+              className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            >
+              <option value="">No Department</option>
+              {departmentsData?.departments.map((dept) => (
+                <option key={dept.id} value={dept.id}>
+                  {dept.name} ({dept.code})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex gap-3 pt-4">
             <Button type="button" variant="outline" className="flex-1" onClick={() => setIsEditModalOpen(false)}>
               Cancel
@@ -531,16 +827,16 @@ export default function UsersPage() {
         </form>
       </Modal>
 
-      {/* Delete Modal */}
+      {/* Delete Modal (Soft Delete) */}
       <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Delete User">
         <div className="space-y-4">
-          <div className="flex items-center gap-3 p-4 bg-red-50 rounded-lg">
-            <AlertCircle className="w-8 h-8 text-red-600 flex-shrink-0" />
+          <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-lg">
+            <AlertCircle className="w-8 h-8 text-amber-600 flex-shrink-0" />
             <div>
-              <p className="font-medium text-red-800">Are you sure you want to delete this user?</p>
-              <p className="text-sm text-red-600 mt-1">
-                This action cannot be undone. All data associated with{' '}
-                <span className="font-medium">{selectedUser?.name}</span> will be permanently removed.
+              <p className="font-medium text-amber-800">Are you sure you want to delete this user?</p>
+              <p className="text-sm text-amber-600 mt-1">
+                <span className="font-medium">{selectedUser?.name}</span> will be moved to trash.
+                Their attendance records will be preserved and you can restore them later.
               </p>
             </div>
           </div>
@@ -559,6 +855,125 @@ export default function UsersPage() {
               Delete User
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Force Delete Modal (Permanent) */}
+      <Modal isOpen={isForceDeleteModalOpen} onClose={() => setIsForceDeleteModalOpen(false)} title="Permanently Delete User">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 p-4 bg-red-50 rounded-lg">
+            <AlertCircle className="w-8 h-8 text-red-600 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-red-800">This action cannot be undone!</p>
+              <p className="text-sm text-red-600 mt-1">
+                <span className="font-medium">{selectedUser?.name}</span> and all their attendance records
+                will be permanently deleted from the system.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={() => setIsForceDeleteModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              className="flex-1"
+              onClick={handleForceDelete}
+              isLoading={forceDeleteMutation.isPending}
+            >
+              Permanently Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* QR Code Modal */}
+      <Modal isOpen={isQRModalOpen} onClose={() => setIsQRModalOpen(false)} title="Invite QR Code">
+        <div className="space-y-4">
+          {selectedUser?.invite_token && (
+            <>
+              {/* Printable Content (hidden, used only for print) */}
+              <div ref={printRef} className="hidden">
+                <div className="print-card">
+                  <div className="logo">VerifyStaff</div>
+                  <div className="title">Scan to join the team</div>
+                  <div className="qr-container">
+                    <QRCodeSVG
+                      value={getInviteUrl(selectedUser.invite_token)}
+                      size={200}
+                      level="H"
+                      marginSize={2}
+                    />
+                  </div>
+                  <div className="user-name">{selectedUser.name}</div>
+                  <div className="user-role">
+                    {ROLES.find((r) => r.value === selectedUser.role)?.label}
+                  </div>
+                  <div className="instructions">
+                    <div className="step">1. Scan this QR code with your phone</div>
+                    <div className="step">2. Set your password</div>
+                    <div className="step">3. Start using VerifyStaff</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preview Card */}
+              <div className="border-2 border-gray-200 rounded-xl p-6 text-center bg-gray-50">
+                <p className="text-xl font-bold text-blue-600 mb-1">VerifyStaff</p>
+                <p className="text-sm text-gray-500 mb-4">Scan to join the team</p>
+                <div className="bg-white p-4 rounded-lg inline-block shadow-sm">
+                  <QRCodeSVG
+                    id="invite-qr-code"
+                    value={getInviteUrl(selectedUser.invite_token)}
+                    size={180}
+                    level="H"
+                    marginSize={2}
+                  />
+                </div>
+                <p className="text-lg font-semibold text-gray-900 mt-4">{selectedUser.name}</p>
+                <p className="text-sm text-gray-500">
+                  {ROLES.find((r) => r.value === selectedUser.role)?.label}
+                </p>
+                <div className="text-xs text-gray-400 mt-4 space-y-1">
+                  <p>1. Scan this QR code with your phone</p>
+                  <p>2. Set your password</p>
+                  <p>3. Start using VerifyStaff</p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handlePrint}
+                >
+                  <Printer className="w-4 h-4 mr-2" />
+                  Print
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={handleDownloadQR}
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download QR
+                </Button>
+              </div>
+
+              {/* Link Display */}
+              <div className="p-3 bg-gray-100 rounded-lg">
+                <p className="text-xs text-gray-500 mb-1">Invite Link:</p>
+                <p className="text-xs text-gray-700 break-all font-mono">
+                  {getInviteUrl(selectedUser.invite_token)}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>

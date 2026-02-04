@@ -98,7 +98,8 @@ class SyncController extends Controller
         $duplicateScanWindow = $config['duplicate_scan_window_minutes'];
 
         foreach ($logs as $log) {
-            $worker = User::where('id', $log['worker_id'])
+            $worker = User::with('department')
+                ->where('id', $log['worker_id'])
                 ->where('role', 'worker')
                 ->first();
 
@@ -186,10 +187,18 @@ class SyncController extends Controller
             ];
 
             // Calculate fields based on type
+            // Use worker's department config if available, otherwise fall back to global settings
+            $workerConfig = $worker->getWorkHoursConfig();
+            $workerWorkStart = $workerConfig['work_start_time'];
+            $workerWorkEnd = $workerConfig['work_end_time'];
+            $workerLateThreshold = $workerConfig['late_threshold_minutes'];
+            $workerRegularMinutes = $workerConfig['regular_work_minutes'];
+            $workerEarlyDepartureThreshold = $workerConfig['early_departure_threshold_minutes'];
+
             if ($type === 'in') {
-                // Check for late arrival using settings
-                $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workStartTime);
-                $graceEnd = $expectedStart->copy()->addMinutes($lateThresholdMinutes);
+                // Check for late arrival using worker's department shift settings
+                $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workerWorkStart);
+                $graceEnd = $expectedStart->copy()->addMinutes($workerLateThreshold);
                 $logData['is_late'] = $deviceTime->gt($graceEnd);
             } elseif ($type === 'out') {
                 // Find matching check-in (unpaired, same day, before this check-out)
@@ -207,18 +216,19 @@ class SyncController extends Controller
                     $logData['work_minutes'] = $workMinutes;
                     $logData['paired_log_id'] = $checkIn->id;
 
-                    // Check for overtime using settings
-                    if ($workMinutes > $regularWorkMinutes) {
+                    // Check for overtime using worker's department settings
+                    if ($workMinutes > $workerRegularMinutes) {
                         $logData['is_overtime'] = true;
-                        $logData['overtime_minutes'] = $workMinutes - $regularWorkMinutes;
+                        $logData['overtime_minutes'] = $workMinutes - $workerRegularMinutes;
                     } else {
                         $logData['is_overtime'] = false;
                         $logData['overtime_minutes'] = 0;
                     }
 
-                    // Check for early departure using settings
-                    $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workEndTime);
-                    $logData['is_early_departure'] = $deviceTime->lt($expectedEnd);
+                    // Check for early departure using worker's department settings
+                    $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workerWorkEnd);
+                    $earlyThreshold = $expectedEnd->copy()->subMinutes($workerEarlyDepartureThreshold);
+                    $logData['is_early_departure'] = $deviceTime->lt($earlyThreshold);
                 }
             }
 

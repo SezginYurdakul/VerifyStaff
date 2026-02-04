@@ -3,20 +3,23 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable, SoftDeletes;
 
     protected $fillable = [
         'name',
         'email',
         'phone',
         'employee_id',
+        'department_id',
         'password',
         'role',
         'secret_token',
@@ -71,6 +74,24 @@ class User extends Authenticatable
     public function attendanceLogsAsRep(): HasMany
     {
         return $this->hasMany(AttendanceLog::class, 'rep_id');
+    }
+
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class);
+    }
+
+    /**
+     * Get work hours config for this user.
+     * Uses department settings if available, otherwise falls back to global settings.
+     */
+    public function getWorkHoursConfig(): array
+    {
+        if ($this->department) {
+            return $this->department->getWorkHoursConfig();
+        }
+
+        return Setting::getWorkHoursConfig();
     }
 
     public static function generateSecretToken(): string

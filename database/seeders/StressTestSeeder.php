@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\AttendanceLog;
+use App\Models\Department;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
@@ -42,8 +43,8 @@ class StressTestSeeder extends Seeder
         $rep = User::firstOrCreate(
             ['email' => 'rep@verifystaff.com'],
             [
-                'name' => 'Ahmet Yilmaz',
-                'phone' => '+905550000002',
+                'name' => 'Willem de Jong',
+                'phone' => '+31612345678',
                 'employee_id' => 'REP001',
                 'password' => 'password123',
                 'role' => 'representative',
@@ -52,17 +53,26 @@ class StressTestSeeder extends Seeder
             ]
         );
 
+        // Create departments if they don't exist
+        $this->command->info('Creating departments...');
+        $departments = $this->createDepartments();
+        $departmentIds = array_column($departments, 'id');
+
         $this->command->info('Creating ' . self::WORKER_COUNT . ' workers...');
 
         // Create workers in batches
         $workerData = [];
 
         for ($i = 1; $i <= self::WORKER_COUNT; $i++) {
+            // Assign department in round-robin fashion
+            $departmentId = $departmentIds[($i - 1) % count($departmentIds)];
+
             $workerData[] = [
                 'name' => $this->generateName(),
                 'email' => "worker{$i}@example.com",
-                'phone' => '+90556' . str_pad($i, 7, '0', STR_PAD_LEFT),
+                'phone' => '+316' . str_pad($i, 8, '0', STR_PAD_LEFT),
                 'employee_id' => 'WRK' . str_pad($i, 5, '0', STR_PAD_LEFT),
+                'department_id' => $departmentId,
                 'password' => bcrypt('password123'),
                 'role' => 'worker',
                 'status' => 'active',
@@ -251,18 +261,73 @@ class StressTestSeeder extends Seeder
     private function generateName(): string
     {
         $firstNames = [
-            'Mehmet', 'Ahmet', 'Ali', 'Mustafa', 'Hasan', 'Huseyin', 'Ibrahim', 'Osman', 'Yusuf', 'Emre',
-            'Fatma', 'Ayse', 'Emine', 'Hatice', 'Zeynep', 'Elif', 'Merve', 'Esra', 'Selin', 'Deniz',
-            'Burak', 'Cem', 'Kaan', 'Eren', 'Baris', 'Umut', 'Tolga', 'Serkan', 'Onur', 'Mert',
-            'Gamze', 'Gizem', 'Tugba', 'Ozlem', 'Sevgi', 'Derya', 'Melek', 'Asli', 'Ceren', 'Ebru',
+            'Jan', 'Pieter', 'Willem', 'Hendrik', 'Cornelis', 'Johannes', 'Gerrit', 'Jacobus', 'Dirk', 'Adriaan',
+            'Anna', 'Maria', 'Elisabeth', 'Johanna', 'Cornelia', 'Wilhelmina', 'Margaretha', 'Geertruida', 'Helena', 'Catharina',
+            'Bas', 'Daan', 'Sem', 'Lucas', 'Levi', 'Finn', 'Jesse', 'Milan', 'Luuk', 'Thijs',
+            'Emma', 'Sophie', 'Julia', 'Lotte', 'Eva', 'Sanne', 'Lisa', 'Fleur', 'Isa', 'Noa',
         ];
 
         $lastNames = [
-            'Yilmaz', 'Kaya', 'Demir', 'Celik', 'Sahin', 'Yildiz', 'Ozturk', 'Aydin', 'Ozdemir', 'Arslan',
-            'Dogan', 'Kilic', 'Aslan', 'Cetin', 'Kara', 'Koc', 'Kurt', 'Ozkan', 'Simsek', 'Polat',
-            'Erdogan', 'Gunes', 'Ak', 'Korkmaz', 'Caliskan', 'Kaplan', 'Bulut', 'Tekin', 'Aksoy', 'Yalcin',
+            'de Jong', 'Jansen', 'de Vries', 'van den Berg', 'van Dijk', 'Bakker', 'Janssen', 'Visser', 'Smit', 'Meijer',
+            'de Boer', 'Mulder', 'de Groot', 'Bos', 'Vos', 'Peters', 'Hendriks', 'van Leeuwen', 'Dekker', 'Brouwer',
+            'de Wit', 'Dijkstra', 'Smits', 'de Graaf', 'van der Meer', 'van der Linden', 'Kok', 'Jacobs', 'de Haan', 'Vermeulen',
         ];
 
         return $firstNames[array_rand($firstNames)] . ' ' . $lastNames[array_rand($lastNames)];
+    }
+
+    private function createDepartments(): array
+    {
+        $departmentsData = [
+            [
+                'name' => 'Warehouse',
+                'code' => 'WH',
+                'shift_start' => '07:00:00',
+                'shift_end' => '16:00:00',
+                'late_threshold_minutes' => 10,
+                'early_departure_threshold_minutes' => 10,
+                'regular_work_minutes' => 480,
+                'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'],
+                'description' => 'Warehouse operations - early shift',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Office',
+                'code' => 'OFF',
+                'shift_start' => '09:00:00',
+                'shift_end' => '18:00:00',
+                'late_threshold_minutes' => 15,
+                'early_departure_threshold_minutes' => 15,
+                'regular_work_minutes' => 480,
+                'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                'description' => 'Office staff - standard hours',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Security',
+                'code' => 'SEC',
+                'shift_start' => '22:00:00',
+                'shift_end' => '06:00:00',
+                'late_threshold_minutes' => 5,
+                'early_departure_threshold_minutes' => 5,
+                'regular_work_minutes' => 480,
+                'working_days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+                'description' => 'Security staff - night shift',
+                'is_active' => true,
+            ],
+        ];
+
+        $departments = [];
+        foreach ($departmentsData as $data) {
+            $department = Department::firstOrCreate(
+                ['code' => $data['code']],
+                $data
+            );
+            $departments[] = ['id' => $department->id, 'code' => $department->code];
+        }
+
+        $this->command->info('Created/Found ' . count($departments) . ' departments');
+
+        return $departments;
     }
 }

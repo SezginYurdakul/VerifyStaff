@@ -8,10 +8,36 @@ export interface User {
   email: string;
   phone: string | null;
   employee_id: string | null;
+  department_id: number | null;
+  department?: {
+    id: number;
+    name: string;
+    code: string;
+  } | null;
   role: UserRole;
   status: UserStatus;
   secret_token: string | null;
   invite_accepted_at: string | null;
+  invite_token?: string; // Only included for admins when user has pending invite
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string | null;
+}
+
+// Department types
+export interface Department {
+  id: number;
+  name: string;
+  code: string;
+  shift_start: string;
+  shift_end: string;
+  late_threshold_minutes: number;
+  early_departure_threshold_minutes: number;
+  regular_work_minutes: number;
+  working_days: string[] | null;
+  description: string | null;
+  is_active: boolean;
+  workers_count?: number;
   created_at: string;
   updated_at: string;
 }

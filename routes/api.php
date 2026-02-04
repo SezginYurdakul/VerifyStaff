@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\DepartmentsController;
 use App\Http\Controllers\Api\V1\InviteController;
 use App\Http\Controllers\Api\V1\KioskController;
 use App\Http\Controllers\Api\V1\ReportsController;
@@ -93,5 +94,14 @@ Route::prefix('v1')->group(function () {
         Route::put('users/{user}', [UsersController::class, 'update']);
         Route::delete('users/{user}', [UsersController::class, 'destroy']);
         Route::post('users/{user}/resend-invite', [UsersController::class, 'resendInvite']);
+        Route::post('users/{id}/restore', [UsersController::class, 'restore']);
+        Route::delete('users/{id}/force', [UsersController::class, 'forceDelete']);
+
+        // Department management - Admin only
+        Route::get('departments', [DepartmentsController::class, 'index']);
+        Route::post('departments', [DepartmentsController::class, 'store']);
+        Route::get('departments/{id}', [DepartmentsController::class, 'show']);
+        Route::put('departments/{id}', [DepartmentsController::class, 'update']);
+        Route::delete('departments/{id}', [DepartmentsController::class, 'destroy']);
     });
 });

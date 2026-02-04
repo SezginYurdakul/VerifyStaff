@@ -2,7 +2,7 @@ import { type ReactNode, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
-import { BarChart3, LogOut, Camera, Monitor, QrCode, Settings, FileText, Users } from 'lucide-react';
+import { BarChart3, LogOut, Camera, Monitor, QrCode, Settings, FileText, Users, Building2 } from 'lucide-react';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -141,6 +141,12 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   icon={Users}
                   label="Users"
                   isActive={location.pathname === '/users'}
+                />
+                <NavItem
+                  to="/departments"
+                  icon={Building2}
+                  label="Departments"
+                  isActive={location.pathname === '/departments'}
                 />
                 <NavItem
                   to="/settings"

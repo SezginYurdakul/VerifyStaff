@@ -33,6 +33,7 @@ class AttendanceController extends Controller
         }
 
         $worker = $request->user();
+        $worker->load('department');
 
         // Only workers can use self-check
         if (!$worker->isWorker()) {
@@ -129,11 +130,17 @@ class AttendanceController extends Controller
         ];
 
         // Calculate fields based on type
+        // Use worker's department config if available, otherwise fall back to global settings
+        $workerConfig = $worker->getWorkHoursConfig();
+        $workerWorkStart = $workerConfig['work_start_time'];
+        $workerWorkEnd = $workerConfig['work_end_time'];
+        $workerLateThreshold = $workerConfig['late_threshold_minutes'];
+        $workerRegularMinutes = $workerConfig['regular_work_minutes'];
+        $workerEarlyDepartureThreshold = $workerConfig['early_departure_threshold_minutes'];
+
         if ($type === 'in') {
-            $workStartTime = $config['work_start_time'];
-            $lateThresholdMinutes = $config['late_threshold_minutes'];
-            $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workStartTime);
-            $graceEnd = $expectedStart->copy()->addMinutes($lateThresholdMinutes);
+            $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workerWorkStart);
+            $graceEnd = $expectedStart->copy()->addMinutes($workerLateThreshold);
             $logData['is_late'] = $deviceTime->gt($graceEnd);
         } elseif ($type === 'out') {
             // Find matching check-in
@@ -150,18 +157,17 @@ class AttendanceController extends Controller
                 $logData['work_minutes'] = $workMinutes;
                 $logData['paired_log_id'] = $checkIn->id;
 
-                $regularWorkMinutes = $config['regular_work_minutes'];
-                if ($workMinutes > $regularWorkMinutes) {
+                if ($workMinutes > $workerRegularMinutes) {
                     $logData['is_overtime'] = true;
-                    $logData['overtime_minutes'] = $workMinutes - $regularWorkMinutes;
+                    $logData['overtime_minutes'] = $workMinutes - $workerRegularMinutes;
                 } else {
                     $logData['is_overtime'] = false;
                     $logData['overtime_minutes'] = 0;
                 }
 
-                $workEndTime = $config['work_end_time'];
-                $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workEndTime);
-                $logData['is_early_departure'] = $deviceTime->lt($expectedEnd);
+                $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workerWorkEnd);
+                $earlyThreshold = $expectedEnd->copy()->subMinutes($workerEarlyDepartureThreshold);
+                $logData['is_early_departure'] = $deviceTime->lt($earlyThreshold);
             }
         }
 
@@ -240,6 +246,7 @@ class AttendanceController extends Controller
     public function syncOfflineLogs(Request $request): JsonResponse
     {
         $worker = $request->user();
+        $worker->load('department');
 
         if (!$worker->isWorker()) {
             return response()->json([
@@ -266,12 +273,17 @@ class AttendanceController extends Controller
         $duplicates = [];
         $errors = [];
 
+        // Get global config for duplicate scan window
         $config = Setting::getWorkHoursConfig();
-        $workStartTime = $config['work_start_time'];
-        $workEndTime = $config['work_end_time'];
-        $regularWorkMinutes = $config['regular_work_minutes'];
-        $lateThresholdMinutes = $config['late_threshold_minutes'];
         $duplicateScanWindow = $config['duplicate_scan_window_minutes'];
+
+        // Get worker's department config (or global fallback)
+        $workerConfig = $worker->getWorkHoursConfig();
+        $workStartTime = $workerConfig['work_start_time'];
+        $workEndTime = $workerConfig['work_end_time'];
+        $regularWorkMinutes = $workerConfig['regular_work_minutes'];
+        $lateThresholdMinutes = $workerConfig['late_threshold_minutes'];
+        $earlyDepartureThreshold = $workerConfig['early_departure_threshold_minutes'];
 
         foreach ($validated['logs'] as $log) {
             $kiosk = Kiosk::where('code', $log['kiosk_code'])
@@ -386,7 +398,8 @@ class AttendanceController extends Controller
                     }
 
                     $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workEndTime);
-                    $logData['is_early_departure'] = $deviceTime->lt($expectedEnd);
+                    $earlyThreshold = $expectedEnd->copy()->subMinutes($earlyDepartureThreshold);
+                    $logData['is_early_departure'] = $deviceTime->lt($earlyThreshold);
                 }
             }
 

@@ -27,8 +27,15 @@ class UsersController extends Controller
         $perPage = $request->integer('per_page', 20);
         $role = $request->string('role');
         $status = $request->string('status');
+        $departmentId = $request->integer('department_id');
+        $trashed = $request->boolean('trashed', false);
 
-        $query = User::query()->orderBy('created_at', 'desc');
+        $query = User::with('department')->orderBy('created_at', 'desc');
+
+        // Include soft-deleted users if requested
+        if ($trashed) {
+            $query->onlyTrashed();
+        }
 
         if ($role->isNotEmpty()) {
             $query->where('role', $role);
@@ -36,6 +43,10 @@ class UsersController extends Controller
 
         if ($status->isNotEmpty()) {
             $query->where('status', $status);
+        }
+
+        if ($departmentId) {
+            $query->where('department_id', $departmentId);
         }
 
         $users = $query->paginate($perPage);
@@ -62,6 +73,7 @@ class UsersController extends Controller
             'email' => ['required', 'email', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:20'],
             'employee_id' => ['nullable', 'string', 'max:50', 'unique:users,employee_id'],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'role' => ['required', Rule::in(['admin', 'representative', 'worker'])],
         ]);
 
@@ -70,6 +82,7 @@ class UsersController extends Controller
             'email' => $validated['email'],
             'phone' => $validated['phone'] ?? null,
             'employee_id' => $validated['employee_id'] ?? null,
+            'department_id' => $validated['department_id'] ?? null,
             'role' => $validated['role'],
             'status' => 'active',
             'secret_token' => User::generateSecretToken(),
@@ -81,7 +94,7 @@ class UsersController extends Controller
 
         return response()->json([
             'message' => 'User created and invitation sent',
-            'user' => new UserResource($newUser),
+            'user' => new UserResource($newUser->load('department')),
         ], 201);
     }
 
@@ -92,6 +105,8 @@ class UsersController extends Controller
         if (!$authUser->isAdmin()) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $user->load('department');
 
         return response()->json([
             'user' => new UserResource($user),
@@ -111,6 +126,7 @@ class UsersController extends Controller
             'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
             'phone' => ['nullable', 'string', 'max:20'],
             'employee_id' => ['nullable', 'string', 'max:50', Rule::unique('users', 'employee_id')->ignore($user->id)],
+            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
             'role' => ['sometimes', Rule::in(['admin', 'representative', 'worker'])],
             'status' => ['sometimes', Rule::in(['active', 'inactive', 'suspended'])],
         ]);
@@ -119,7 +135,7 @@ class UsersController extends Controller
 
         return response()->json([
             'message' => 'User updated successfully',
-            'user' => new UserResource($user->fresh()),
+            'user' => new UserResource($user->fresh()->load('department')),
         ]);
     }
 
@@ -159,6 +175,50 @@ class UsersController extends Controller
 
         return response()->json([
             'message' => 'Invitation resent successfully',
+        ]);
+    }
+
+    public function restore(Request $request, int $id): JsonResponse
+    {
+        $authUser = $request->user();
+
+        if (!$authUser->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $user = User::onlyTrashed()->find($id);
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        $user->restore();
+
+        return response()->json([
+            'message' => 'User restored successfully',
+            'user' => new UserResource($user->load('department')),
+        ]);
+    }
+
+    public function forceDelete(Request $request, int $id): JsonResponse
+    {
+        $authUser = $request->user();
+
+        if (!$authUser->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $user = User::onlyTrashed()->find($id);
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found'], 404);
+        }
+
+        // Permanently delete - this will cascade delete attendance logs
+        $user->forceDelete();
+
+        return response()->json([
+            'message' => 'User permanently deleted',
         ]);
     }
 }

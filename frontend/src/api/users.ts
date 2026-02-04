@@ -14,6 +14,7 @@ export interface CreateUserRequest {
   email: string;
   phone?: string;
   employee_id?: string;
+  department_id?: number | null;
   role: UserRole;
 }
 
@@ -22,6 +23,7 @@ export interface UpdateUserRequest {
   email?: string;
   phone?: string | null;
   employee_id?: string | null;
+  department_id?: number | null;
   role?: UserRole;
   status?: UserStatus;
 }
@@ -31,6 +33,8 @@ export async function getUsers(params?: {
   per_page?: number;
   role?: UserRole;
   status?: UserStatus;
+  department_id?: number;
+  trashed?: boolean;
 }): Promise<UsersListResponse> {
   const response = await api.get<UsersListResponse>('/users', { params });
   return response.data;
@@ -58,5 +62,15 @@ export async function deleteUser(id: number): Promise<{ message: string }> {
 
 export async function resendInvite(id: number): Promise<{ message: string }> {
   const response = await api.post<{ message: string }>(`/users/${id}/resend-invite`);
+  return response.data;
+}
+
+export async function restoreUser(id: number): Promise<{ message: string; user: User }> {
+  const response = await api.post<{ message: string; user: User }>(`/users/${id}/restore`);
+  return response.data;
+}
+
+export async function forceDeleteUser(id: number): Promise<{ message: string }> {
+  const response = await api.delete<{ message: string }>(`/users/${id}/force`);
   return response.data;
 }

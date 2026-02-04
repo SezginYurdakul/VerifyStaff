@@ -32,6 +32,9 @@ import { ReportsPage, WorkerDetailPage } from '@/features/reports';
 // Users pages
 import { UsersPage } from '@/features/users';
 
+// Departments pages
+import { DepartmentsPage } from '@/features/departments';
+
 // Create query client
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -244,6 +247,16 @@ function App() {
               <ProtectedRoute>
                 <AppLayout>
                   <UsersPage />
+                </AppLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/departments"
+            element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <DepartmentsPage />
                 </AppLayout>
               </ProtectedRoute>
             }
