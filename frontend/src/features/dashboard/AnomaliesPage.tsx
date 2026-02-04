@@ -21,7 +21,7 @@ function formatDateTime(timeString: string | null | undefined): string {
     if (!timeString) return '-';
     try {
         const date = new Date(timeString);
-        return date.toLocaleString('tr-TR', {
+        return date.toLocaleString('en-US', {
             weekday: 'short',
             year: 'numeric',
             month: 'short',
@@ -38,7 +38,7 @@ function formatDate(timeString: string | null | undefined): string {
     if (!timeString) return '-';
     try {
         const date = new Date(timeString);
-        return date.toLocaleDateString('tr-TR', {
+        return date.toLocaleDateString('en-US', {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
@@ -53,7 +53,7 @@ function formatTime(timeString: string | null | undefined): string {
     if (!timeString) return '-';
     try {
         const date = new Date(timeString);
-        return date.toLocaleTimeString('tr-TR', {
+        return date.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
         });

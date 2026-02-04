@@ -40,7 +40,7 @@ function formatTime(timeString: string | null): string {
     if (!timeString) return '-';
     try {
         const date = new Date(timeString);
-        return date.toLocaleTimeString('tr-TR', {
+        return date.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
         });
@@ -52,7 +52,7 @@ function formatTime(timeString: string | null): string {
 function formatDate(dateString: string): string {
     try {
         const date = new Date(dateString);
-        return date.toLocaleDateString('tr-TR', {
+        return date.toLocaleDateString('en-US', {
             weekday: 'long',
             day: 'numeric',
             month: 'long',
@@ -66,7 +66,7 @@ function formatDate(dateString: string): string {
 function formatShortDate(dateString: string): string {
     try {
         const date = new Date(dateString);
-        return date.toLocaleDateString('tr-TR', {
+        return date.toLocaleDateString('en-US', {
             weekday: 'short',
             day: 'numeric',
             month: 'short',

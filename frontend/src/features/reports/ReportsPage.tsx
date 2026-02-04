@@ -27,7 +27,7 @@ type PeriodType = 'daily' | 'weekly' | 'monthly';
 function formatDate(dateString: string): string {
     try {
         const date = new Date(dateString);
-        return date.toLocaleDateString('tr-TR', {
+        return date.toLocaleDateString('en-US', {
             weekday: 'short',
             day: 'numeric',
             month: 'short',
@@ -406,7 +406,7 @@ export default function ReportsPage() {
             return `${formatDate(weeklyData.week_start)} - ${formatDate(weeklyData.week_end)}`;
         }
         if (period === 'monthly') {
-            return currentDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+            return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         }
         return '';
     };
