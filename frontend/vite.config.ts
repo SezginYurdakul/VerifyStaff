@@ -59,6 +59,11 @@ export default defineConfig({
       }
     })
   ],
+  // EKLEDİĞİMİZ KISIM BURASI:
+  build: {
+    outDir: '../public', 
+    emptyOutDir: false,   
+  },
   server: {
     port: 5173,
     host: true
