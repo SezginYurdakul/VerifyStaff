@@ -35,6 +35,8 @@ config.yml
 /public/registerSW.js
 /public/sw.js
 /public/workbox-*.js
+/public/index.html
+/public/vite.svg
 
 # Frontend
 /frontend/node_modules
