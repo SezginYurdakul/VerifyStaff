@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { getSettings, updateSetting, getAttendanceMode, updateAttendanceMode } from '@/api/settings';
+import { getSettings, updateSetting, getAttendanceMode, updateAttendanceMode, getWorkHours, updateShifts } from '@/api/settings';
 import { getKiosks, createKiosk, updateKiosk } from '@/api/kiosk';
 import { useAuthStore } from '@/stores/authStore';
 import { Card, Button, Input } from '@/components/ui';
+import { Plus, Trash2, Clock } from 'lucide-react';
 import type { Settings } from '@/types';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'general' | 'attendance' | 'kiosks'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'attendance' | 'shifts' | 'kiosks'>('general');
 
   // Check if user is admin
   const isAdmin = user?.role === 'admin';
@@ -76,6 +77,7 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'general', label: 'General' },
     { id: 'attendance', label: 'Attendance' },
+    { id: 'shifts', label: 'Shifts' },
     { id: 'kiosks', label: 'Kiosks' },
   ] as const;
 
@@ -124,6 +126,15 @@ export default function SettingsPage() {
         />
       )}
 
+      {/* Shifts Tab */}
+      {activeTab === 'shifts' && (
+        <ShiftSettings
+          settings={settingsData?.settings}
+          onUpdate={(key, value) => updateSettingMutation.mutate({ key, value })}
+          isUpdating={updateSettingMutation.isPending}
+        />
+      )}
+
       {/* Kiosks Tab */}
       {activeTab === 'kiosks' && (
         <KioskSettings />
@@ -142,7 +153,6 @@ function GeneralSettings({
   onUpdate: (key: string, value: unknown) => void;
   isUpdating: boolean;
 }) {
-  const workHours = settings?.work_hours || {};
   const general = settings?.general || {};
 
   return (
@@ -185,40 +195,6 @@ function GeneralSettings({
             }}
             disabled={isUpdating}
             hint="How often the kiosk display QR code refreshes (15-60 seconds)"
-          />
-        </div>
-      </Card>
-
-      <Card>
-        <h3 className="font-medium text-gray-900 mb-4">Work Hours</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <SettingField
-            label="Work Start Time"
-            value={workHours.work_start_time?.value as string || '09:00'}
-            type="time"
-            onSave={(value) => onUpdate('work_start_time', value)}
-            disabled={isUpdating}
-          />
-          <SettingField
-            label="Work End Time"
-            value={workHours.work_end_time?.value as string || '18:00'}
-            type="time"
-            onSave={(value) => onUpdate('work_end_time', value)}
-            disabled={isUpdating}
-          />
-          <SettingField
-            label="Late Threshold (minutes)"
-            value={workHours.late_threshold_minutes?.value as number || 15}
-            type="number"
-            onSave={(value) => onUpdate('late_threshold_minutes', parseInt(value))}
-            disabled={isUpdating}
-          />
-          <SettingField
-            label="Early Departure Threshold (min)"
-            value={workHours.early_departure_threshold_minutes?.value as number || 15}
-            type="number"
-            onSave={(value) => onUpdate('early_departure_threshold_minutes', parseInt(value))}
-            disabled={isUpdating}
           />
         </div>
       </Card>
@@ -321,6 +297,291 @@ function AttendanceSettings({
           disabled={isUpdating}
         />
       </Card>
+    </div>
+  );
+}
+
+// Shift type definition
+interface Shift {
+  name: string;
+  code: string;
+  start_time: string;
+  end_time: string;
+  break_minutes: number;
+}
+
+// Shift Settings Component
+function ShiftSettings({
+  settings,
+  onUpdate,
+  isUpdating,
+}: {
+  settings?: Settings;
+  onUpdate: (key: string, value: unknown) => void;
+  isUpdating: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Fetch work hours config which includes shifts
+  const { data: workHoursData, isLoading } = useQuery({
+    queryKey: ['work-hours'],
+    queryFn: getWorkHours,
+  });
+
+  // Update shifts mutation
+  const updateShiftsMutation = useMutation({
+    mutationFn: (newShifts: Shift[]) => updateShifts(newShifts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['work-hours'] });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      setIsDirty(false);
+    },
+  });
+
+  // Initialize shifts from API data
+  useEffect(() => {
+    if (workHoursData?.shifts) {
+      const shiftsArray = Array.isArray(workHoursData.shifts)
+        ? workHoursData.shifts
+        : Object.entries(workHoursData.shifts).map(([code, shift]: [string, unknown]) => ({
+            code,
+            ...(shift as Omit<Shift, 'code'>),
+          }));
+      setShifts(shiftsArray);
+    }
+  }, [workHoursData?.shifts]);
+
+  const shiftsEnabled = settings?.shifts?.shifts_enabled?.value as boolean || false;
+  const workHours = settings?.work_hours || {};
+
+  const handleAddShift = () => {
+    const newShift: Shift = {
+      name: `Shift ${shifts.length + 1}`,
+      code: `shift_${shifts.length + 1}`,
+      start_time: '09:00',
+      end_time: '17:00',
+      break_minutes: 60,
+    };
+    setShifts([...shifts, newShift]);
+    setIsDirty(true);
+  };
+
+  const handleUpdateShift = (index: number, field: keyof Shift, value: string | number) => {
+    const updated = [...shifts];
+    updated[index] = { ...updated[index], [field]: value };
+    setShifts(updated);
+    setIsDirty(true);
+  };
+
+  const handleRemoveShift = (index: number) => {
+    const updated = shifts.filter((_, i) => i !== index);
+    setShifts(updated);
+    setIsDirty(true);
+  };
+
+  const handleSaveShifts = () => {
+    updateShiftsMutation.mutate(shifts);
+  };
+
+  if (isLoading) {
+    return (
+      <Card className="text-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
+        <p className="mt-2 text-gray-600">Loading...</p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Enable Multiple Shifts Toggle */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-gray-900">Multiple Shifts</h3>
+            <p className="text-sm text-gray-600">
+              {shiftsEnabled
+                ? 'Define different work schedules for different shifts'
+                : 'All workers use the same work hours'}
+            </p>
+          </div>
+          <SettingToggle
+            label=""
+            description=""
+            value={shiftsEnabled}
+            onToggle={(value) => onUpdate('shifts_enabled', value)}
+            disabled={isUpdating}
+          />
+        </div>
+      </Card>
+
+      {/* Default Work Hours (when shifts disabled) */}
+      {!shiftsEnabled && (
+        <Card>
+          <h3 className="font-medium text-gray-900 mb-4">Work Hours</h3>
+          <p className="text-sm text-gray-600 mb-4">Default work schedule for all workers</p>
+          <div className="grid grid-cols-2 gap-4">
+            <SettingField
+              label="Work Start Time"
+              value={workHours.work_start_time?.value as string || '09:00'}
+              type="time"
+              onSave={(value) => onUpdate('work_start_time', value)}
+              disabled={isUpdating}
+            />
+            <SettingField
+              label="Work End Time"
+              value={workHours.work_end_time?.value as string || '18:00'}
+              type="time"
+              onSave={(value) => onUpdate('work_end_time', value)}
+              disabled={isUpdating}
+            />
+          </div>
+        </Card>
+      )}
+
+      {/* Threshold Settings (always visible) */}
+      <Card>
+        <h3 className="font-medium text-gray-900 mb-4">Attendance Thresholds</h3>
+        <p className="text-sm text-gray-600 mb-4">Rules for flagging late arrivals and early departures</p>
+        <div className="grid grid-cols-2 gap-4">
+          <SettingField
+            label="Late Threshold (minutes)"
+            value={workHours.late_threshold_minutes?.value as number || 15}
+            type="number"
+            onSave={(value) => onUpdate('late_threshold_minutes', parseInt(value))}
+            disabled={isUpdating}
+            hint="Minutes after start time to flag as late"
+          />
+          <SettingField
+            label="Early Departure Threshold (min)"
+            value={workHours.early_departure_threshold_minutes?.value as number || 15}
+            type="number"
+            onSave={(value) => onUpdate('early_departure_threshold_minutes', parseInt(value))}
+            disabled={isUpdating}
+            hint="Minutes before end time to flag as early"
+          />
+        </div>
+      </Card>
+
+      {/* Multiple Shifts (when enabled) */}
+      {shiftsEnabled && (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-medium text-gray-900">Defined Shifts</h3>
+              <p className="text-sm text-gray-600">Each shift has its own work schedule</p>
+            </div>
+            <Button onClick={handleAddShift} size="sm">
+              <Plus className="w-4 h-4 mr-1" />
+              Add Shift
+            </Button>
+          </div>
+
+          {shifts.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No shifts defined yet</p>
+              <p className="text-sm mt-1">Add a shift to get started</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {shifts.map((shift, index) => (
+                <div
+                  key={index}
+                  className="p-4 border border-gray-200 rounded-lg bg-gray-50"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Shift Name
+                        </label>
+                        <input
+                          type="text"
+                          value={shift.name}
+                          onChange={(e) => handleUpdateShift(index, 'name', e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="e.g., Morning Shift"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Code
+                        </label>
+                        <input
+                          type="text"
+                          value={shift.code}
+                          onChange={(e) => handleUpdateShift(index, 'code', e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="e.g., morning"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveShift(index)}
+                      className="ml-3 p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Remove Shift"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Start Time
+                      </label>
+                      <input
+                        type="time"
+                        value={shift.start_time}
+                        onChange={(e) => handleUpdateShift(index, 'start_time', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        End Time
+                      </label>
+                      <input
+                        type="time"
+                        value={shift.end_time}
+                        onChange={(e) => handleUpdateShift(index, 'end_time', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Break (minutes)
+                      </label>
+                      <input
+                        type="number"
+                        value={shift.break_minutes}
+                        onChange={(e) => handleUpdateShift(index, 'break_minutes', parseInt(e.target.value) || 0)}
+                        min={0}
+                        max={120}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {isDirty && (
+                <div className="flex justify-end pt-2">
+                  <Button
+                    onClick={handleSaveShifts}
+                    disabled={updateShiftsMutation.isPending}
+                    isLoading={updateShiftsMutation.isPending}
+                  >
+                    Save Shifts
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }

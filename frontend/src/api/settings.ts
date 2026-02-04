@@ -65,10 +65,18 @@ export const updateWorkingDays = async (workingDays: string[]): Promise<{
   return response.data;
 };
 
-export const updateShifts = async (shifts: Record<string, { name: string; start: string; end: string }>): Promise<{
+export interface ShiftData {
+  name: string;
+  code: string;
+  start_time: string;
+  end_time: string;
+  break_minutes: number;
+}
+
+export const updateShifts = async (shifts: ShiftData[]): Promise<{
   message: string;
-  shifts: Record<string, { name: string; start: string; end: string }>;
+  shifts: ShiftData[];
 }> => {
-  const response = await api.put('/settings/shifts', { shifts });
+  const response = await api.put('/settings/config/shifts', { shifts });
   return response.data;
 };
