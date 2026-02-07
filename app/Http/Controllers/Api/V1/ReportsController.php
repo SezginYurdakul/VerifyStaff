@@ -306,6 +306,8 @@ class ReportsController extends Controller
 
     public function allWorkersMonthlySummary(Request $request): JsonResponse
     {
+        $startTime = microtime(true);
+
         $user = $request->user();
 
         if (!$user->isAdmin() && !$user->isRepresentative()) {
@@ -334,11 +336,17 @@ class ReportsController extends Controller
             ->get()
             ->keyBy('worker_id');
 
-        $result = $workers->getCollection()->map(function ($worker) use ($summaries, $monthStart) {
+        $calculatedCount = 0;
+        $cachedCount = 0;
+
+        $result = $workers->getCollection()->map(function ($worker) use ($summaries, $monthStart, &$calculatedCount, &$cachedCount) {
             $summary = $summaries->get($worker->id);
 
             if (!$summary) {
                 $summary = $this->summaryService->calculateMonthly($worker, $monthStart->copy());
+                $calculatedCount++;
+            } else {
+                $cachedCount++;
             }
 
             return [
@@ -356,6 +364,8 @@ class ReportsController extends Controller
             ];
         });
 
+        $executionTimeMs = round((microtime(true) - $startTime) * 1000, 2);
+
         return response()->json([
             'period' => 'monthly',
             'month' => $monthStart->format('Y-m'),
@@ -366,6 +376,11 @@ class ReportsController extends Controller
             'current_page' => $workers->currentPage(),
             'last_page' => $workers->lastPage(),
             'workers' => $result,
+            'performance' => [
+                'execution_time_ms' => $executionTimeMs,
+                'cached_summaries' => $cachedCount,
+                'calculated_summaries' => $calculatedCount,
+            ],
         ]);
     }
 
