@@ -12,12 +12,28 @@ class ReportsTest extends TestCase
 {
     use RefreshDatabase;
 
+    private User $rep;
+
+    private function getOrCreateRep(): User
+    {
+        if (!isset($this->rep)) {
+            $this->rep = User::factory()->create([
+                'role' => 'representative',
+                'status' => 'active',
+            ]);
+        }
+
+        return $this->rep;
+    }
+
     private function createWorkerWithLogs(): User
     {
         $worker = User::factory()->create([
             'role' => 'worker',
             'status' => 'active',
         ]);
+
+        $rep = $this->getOrCreateRep();
 
         // Create some attendance logs for the worker
         $today = Carbon::today();
@@ -26,7 +42,7 @@ class ReportsTest extends TestCase
         AttendanceLog::create([
             'event_id' => 'checkin-' . $worker->id . '-' . $today->format('Y-m-d'),
             'worker_id' => $worker->id,
-            'rep_id' => 1,
+            'rep_id' => $rep->id,
             'type' => 'in',
             'device_time' => $today->copy()->setTime(9, 0),
             'device_timezone' => 'UTC',
@@ -38,7 +54,7 @@ class ReportsTest extends TestCase
         AttendanceLog::create([
             'event_id' => 'checkout-' . $worker->id . '-' . $today->format('Y-m-d'),
             'worker_id' => $worker->id,
-            'rep_id' => 1,
+            'rep_id' => $rep->id,
             'type' => 'out',
             'device_time' => $today->copy()->setTime(18, 0),
             'device_timezone' => 'UTC',
@@ -337,11 +353,13 @@ class ReportsTest extends TestCase
             'status' => 'active',
         ]);
 
+        $rep = $this->getOrCreateRep();
+
         // Create a flagged log
         AttendanceLog::create([
             'event_id' => 'flagged-1',
             'worker_id' => $worker->id,
-            'rep_id' => 1,
+            'rep_id' => $rep->id,
             'type' => 'in',
             'device_time' => now(),
             'device_timezone' => 'UTC',
@@ -396,13 +414,20 @@ class ReportsTest extends TestCase
             'status' => 'active',
         ]);
 
+        $rep = $this->getOrCreateRep();
+
         // Create attendance logs for today for these workers
         $today = now();
-        foreach ($workers as $worker) {
-            AttendanceLog::factory()->create([
+        foreach ($workers as $index => $worker) {
+            AttendanceLog::create([
+                'event_id' => 'daily-checkin-' . $worker->id . '-' . $today->format('Y-m-d'),
                 'worker_id' => $worker->id,
+                'rep_id' => $rep->id,
                 'type' => 'in',
                 'device_time' => $today,
+                'device_timezone' => 'UTC',
+                'sync_time' => now(),
+                'sync_status' => 'synced',
             ]);
         }
 

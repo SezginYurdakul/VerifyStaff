@@ -32,8 +32,10 @@ class UserResourceTest extends TestCase
         $this->assertArrayHasKey('employee_id', $array);
         $this->assertArrayHasKey('role', $array);
         $this->assertArrayHasKey('status', $array);
-        $this->assertArrayHasKey('created_at', $array);
-        $this->assertArrayHasKey('updated_at', $array);
+        // created_at and updated_at are no longer in the base response
+        // created_at is only included for admin users viewing other users
+        $this->assertArrayNotHasKey('created_at', $array);
+        $this->assertArrayNotHasKey('updated_at', $array);
     }
 
     public function test_resource_does_not_expose_password(): void

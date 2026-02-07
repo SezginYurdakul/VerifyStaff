@@ -203,7 +203,7 @@ class UsersTest extends TestCase
         $response->assertOk()
             ->assertJson(['message' => 'User deleted successfully']);
 
-        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+        $this->assertSoftDeleted('users', ['id' => $user->id]);
     }
 
     public function test_admin_cannot_delete_self(): void
