@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useSyncStore } from '@/stores/syncStore';
@@ -15,7 +15,7 @@ interface NavItemProps {
   isActive: boolean;
 }
 
-function NavItem({ to, icon: Icon, label, isActive }: NavItemProps) {
+function NavItemHeader({ to, icon: Icon, label, isActive }: NavItemProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   return (
@@ -24,8 +24,8 @@ function NavItem({ to, icon: Icon, label, isActive }: NavItemProps) {
         to={to}
         className={`p-2.5 rounded-lg transition-colors flex items-center justify-center ${
           isActive
-            ? 'bg-blue-100 text-blue-600'
-            : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+            ? 'bg-brand-200/20 text-white'
+            : 'text-brand-300 hover:bg-brand-800 hover:text-white'
         }`}
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
@@ -33,9 +33,9 @@ function NavItem({ to, icon: Icon, label, isActive }: NavItemProps) {
         <Icon className="w-6 h-6" />
       </Link>
       {showTooltip && (
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap z-50">
+        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-white text-brand-900 text-xs rounded whitespace-nowrap z-50 shadow-lg">
           {label}
-          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+          <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45" />
         </div>
       )}
     </div>
@@ -47,7 +47,20 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const { pendingCount } = useSyncStore();
-  const isOnline = navigator.onLine;
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -59,25 +72,26 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const isAdminOrRep = user?.role === 'admin' || user?.role === 'representative';
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-brand-50 flex flex-col">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
+      <header className="bg-brand-900 shadow-sm border-b border-brand-800">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <Link to="/" className="flex items-center gap-2 hover:opacity-80">
-              <h1 className="text-xl font-bold text-gray-900">VerifyStaff</h1>
+              <img src="/logo.svg" alt="VerifyStaff" className="h-8 w-auto" />
+              <h1 className="text-xl font-bold text-white hidden sm:block">VerifyStaff</h1>
             </Link>
             <span
               className={`text-xs px-2 py-1 rounded-full ${
                 isOnline
-                  ? 'bg-green-100 text-green-800'
-                  : 'bg-red-100 text-red-800'
+                  ? 'bg-green-500/20 text-green-200'
+                  : 'bg-accent-500/20 text-accent-400'
               }`}
             >
               {isOnline ? 'Online' : 'Offline'}
             </span>
             {pendingCount > 0 && (
-              <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-800">
+              <span className="text-xs px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-200">
                 {pendingCount} pending
               </span>
             )}
@@ -86,25 +100,25 @@ export default function AppLayout({ children }: AppLayoutProps) {
             {/* Navigation Links */}
             {isAdminOrRep && (
               <>
-                <NavItem
+                <NavItemHeader
                   to="/"
                   icon={BarChart3}
                   label="Dashboard"
                   isActive={location.pathname === '/'}
                 />
-                <NavItem
+                <NavItemHeader
                   to="/reports"
                   icon={FileText}
                   label="Reports"
                   isActive={location.pathname === '/reports' || location.pathname.startsWith('/reports/')}
                 />
-                <NavItem
+                <NavItemHeader
                   to="/scan"
                   icon={Camera}
                   label="Scan Worker QR"
                   isActive={location.pathname === '/scan'}
                 />
-                <NavItem
+                <NavItemHeader
                   to="/kiosk-display"
                   icon={Monitor}
                   label="Kiosk QR Display"
@@ -114,19 +128,19 @@ export default function AppLayout({ children }: AppLayoutProps) {
             )}
             {isWorker && (
               <>
-                <NavItem
+                <NavItemHeader
                   to="/"
                   icon={BarChart3}
                   label="Dashboard"
                   isActive={location.pathname === '/'}
                 />
-                <NavItem
+                <NavItemHeader
                   to="/qr"
                   icon={QrCode}
                   label="My QR Code"
                   isActive={location.pathname === '/qr'}
                 />
-                <NavItem
+                <NavItemHeader
                   to="/kiosk-scan"
                   icon={Monitor}
                   label="Kiosk Check-in"
@@ -136,19 +150,19 @@ export default function AppLayout({ children }: AppLayoutProps) {
             )}
             {isAdmin && (
               <>
-                <NavItem
+                <NavItemHeader
                   to="/users"
                   icon={Users}
                   label="Users"
                   isActive={location.pathname === '/users'}
                 />
-                <NavItem
+                <NavItemHeader
                   to="/departments"
                   icon={Building2}
                   label="Departments"
                   isActive={location.pathname === '/departments'}
                 />
-                <NavItem
+                <NavItemHeader
                   to="/settings"
                   icon={Settings}
                   label="Settings"
@@ -158,14 +172,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
             )}
 
             {/* Divider */}
-            <div className="w-px h-8 bg-gray-200 mx-3" />
+            <div className="w-px h-8 bg-brand-700 mx-3" />
 
             {/* User Info */}
-            <span className="text-sm text-gray-600 hidden sm:inline mr-2">{user?.name}</span>
+            <span className="text-sm text-brand-200 hidden sm:inline mr-2">{user?.name}</span>
             <div className="relative">
               <button
                 onClick={handleLogout}
-                className="p-2.5 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                className="p-2.5 rounded-lg text-brand-300 hover:bg-accent-500/20 hover:text-accent-400 transition-colors"
                 title="Logout"
               >
                 <LogOut className="w-6 h-6" />

@@ -1,9 +1,27 @@
 @import "tailwindcss";
 
+/* Brand colors from logo */
+@theme {
+  --color-brand-900: rgb(25, 43, 68);      /* Dark navy - primary */
+  --color-brand-800: rgb(35, 55, 85);
+  --color-brand-700: rgb(45, 70, 105);
+  --color-brand-600: rgb(55, 85, 125);
+  --color-brand-500: rgb(65, 100, 145);
+  --color-brand-400: rgb(100, 140, 180);
+  --color-brand-300: rgb(140, 180, 210);
+  --color-brand-200: rgb(179, 233, 244);   /* Light blue from logo */
+  --color-brand-100: rgb(220, 245, 250);
+  --color-brand-50: rgb(245, 252, 253);    /* Very light blue from logo */
+
+  --color-accent-600: rgb(190, 50, 50);
+  --color-accent-500: rgb(219, 64, 65);    /* Red accent from logo */
+  --color-accent-400: rgb(235, 100, 100);
+}
+
 /* Custom base styles */
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-brand-50 text-gray-900 antialiased;
   }
 }
 
@@ -14,7 +32,7 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed bg-brand-900 text-white hover:bg-brand-800 focus:ring-brand-500;
   }
 
   .btn-secondary {
@@ -26,11 +44,11 @@
   }
 
   .btn-danger {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed bg-accent-500 text-white hover:bg-accent-600 focus:ring-accent-400;
   }
 
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent;
   }
 
   .card {

@@ -351,10 +351,84 @@ function MonthlyTable({
     );
 }
 
+const PER_PAGE_OPTIONS = [10, 30, 50, 75, 100, 'all'] as const;
+type PerPageOption = typeof PER_PAGE_OPTIONS[number];
+
+function PaginationControls({
+    currentPage,
+    lastPage,
+    total,
+    perPage,
+    onPageChange,
+    onPerPageChange,
+}: {
+    currentPage: number;
+    lastPage: number;
+    total: number;
+    perPage: PerPageOption;
+    onPageChange: (page: number) => void;
+    onPerPageChange: (perPage: PerPageOption) => void;
+}) {
+    const startItem = (currentPage - 1) * (typeof perPage === 'number' ? perPage : total) + 1;
+    const endItem = Math.min(currentPage * (typeof perPage === 'number' ? perPage : total), total);
+
+    return (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-500">Show:</label>
+                <select
+                    value={perPage}
+                    onChange={(e) => {
+                        const value = e.target.value;
+                        onPerPageChange(value === 'all' ? 'all' : Number(value) as PerPageOption);
+                    }}
+                    className="border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                    {PER_PAGE_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                            {option === 'all' ? 'All' : option}
+                        </option>
+                    ))}
+                </select>
+                <span className="text-sm text-gray-500">
+                    {startItem}-{endItem} of {total} workers
+                </span>
+            </div>
+            {lastPage > 1 && (
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onPageChange(currentPage - 1)}
+                        disabled={currentPage <= 1}
+                    >
+                        <ChevronLeft className="w-4 h-4" />
+                        Previous
+                    </Button>
+                    <span className="text-sm text-gray-600 px-2">
+                        {currentPage} / {lastPage}
+                    </span>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onPageChange(currentPage + 1)}
+                        disabled={currentPage >= lastPage}
+                    >
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                    </Button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function ReportsPage() {
     const navigate = useNavigate();
     const [period, setPeriod] = useState<PeriodType>('daily');
     const [currentDate, setCurrentDate] = useState(new Date());
+    const [page, setPage] = useState(1);
+    const [perPage, setPerPage] = useState<PerPageOption>(50);
 
     const getDateString = () => currentDate.toISOString().split('T')[0];
     const getMonthString = () => {
@@ -363,21 +437,23 @@ export default function ReportsPage() {
         return `${year}-${month}`;
     };
 
+    const perPageValue = perPage === 'all' ? 10000 : perPage;
+
     const { data: dailyData, isLoading: dailyLoading } = useQuery({
-        queryKey: ['reports', 'daily', getDateString()],
-        queryFn: () => getAllWorkersDailySummary(getDateString()),
+        queryKey: ['reports', 'daily', getDateString(), page, perPage],
+        queryFn: () => getAllWorkersDailySummary(getDateString(), page, perPageValue),
         enabled: period === 'daily',
     });
 
     const { data: weeklyData, isLoading: weeklyLoading } = useQuery({
-        queryKey: ['reports', 'weekly', getDateString()],
-        queryFn: () => getAllWorkersWeeklySummary(getDateString()),
+        queryKey: ['reports', 'weekly', getDateString(), page, perPage],
+        queryFn: () => getAllWorkersWeeklySummary(getDateString(), page, perPageValue),
         enabled: period === 'weekly',
     });
 
     const { data: monthlyData, isLoading: monthlyLoading } = useQuery({
-        queryKey: ['reports', 'monthly', getMonthString()],
-        queryFn: () => getAllWorkersMonthlySummary(getMonthString()),
+        queryKey: ['reports', 'monthly', getMonthString(), page, perPage],
+        queryFn: () => getAllWorkersMonthlySummary(getMonthString(), page, perPageValue),
         enabled: period === 'monthly',
     });
 
@@ -396,7 +472,36 @@ export default function ReportsPage() {
             newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1));
         }
         setCurrentDate(newDate);
+        setPage(1); // Reset page when changing date
     };
+
+    // Reset page when period changes
+    const handlePeriodChange = (newPeriod: PeriodType) => {
+        setPeriod(newPeriod);
+        setPage(1);
+    };
+
+    // Handle per page change
+    const handlePerPageChange = (newPerPage: PerPageOption) => {
+        setPerPage(newPerPage);
+        setPage(1);
+    };
+
+    // Get pagination info based on current period
+    const getPaginationInfo = () => {
+        if (period === 'daily' && dailyData) {
+            return { currentPage: dailyData.current_page, lastPage: dailyData.last_page, total: dailyData.total };
+        }
+        if (period === 'weekly' && weeklyData) {
+            return { currentPage: weeklyData.current_page, lastPage: weeklyData.last_page, total: weeklyData.total };
+        }
+        if (period === 'monthly' && monthlyData) {
+            return { currentPage: monthlyData.current_page, lastPage: monthlyData.last_page, total: monthlyData.total };
+        }
+        return null;
+    };
+
+    const paginationInfo = getPaginationInfo();
 
     const getDateLabel = () => {
         if (period === 'daily') {
@@ -432,7 +537,7 @@ export default function ReportsPage() {
                         View attendance reports for all workers
                     </p>
                 </div>
-                <PeriodSelector period={period} onChange={setPeriod} />
+                <PeriodSelector period={period} onChange={handlePeriodChange} />
             </div>
 
             {/* Summary Cards */}
@@ -484,6 +589,20 @@ export default function ReportsPage() {
                     />
                 </div>
 
+                {/* Pagination Controls - Top */}
+                {paginationInfo && (
+                    <div className="mb-4 pb-4 border-b border-gray-200">
+                        <PaginationControls
+                            currentPage={paginationInfo.currentPage}
+                            lastPage={paginationInfo.lastPage}
+                            total={paginationInfo.total}
+                            perPage={perPage}
+                            onPageChange={setPage}
+                            onPerPageChange={handlePerPageChange}
+                        />
+                    </div>
+                )}
+
                 {isLoading ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
@@ -505,6 +624,20 @@ export default function ReportsPage() {
                             <div className="text-center py-12 text-gray-500">
                                 <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                                 <p>No data available for this period</p>
+                            </div>
+                        )}
+
+                        {/* Pagination Controls - Bottom (only if more than 1 page) */}
+                        {paginationInfo && paginationInfo.lastPage > 1 && (
+                            <div className="border-t border-gray-200 pt-4 mt-4">
+                                <PaginationControls
+                                    currentPage={paginationInfo.currentPage}
+                                    lastPage={paginationInfo.lastPage}
+                                    total={paginationInfo.total}
+                                    perPage={perPage}
+                                    onPageChange={setPage}
+                                    onPerPageChange={handlePerPageChange}
+                                />
                             </div>
                         )}
                     </>
