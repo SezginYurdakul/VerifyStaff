@@ -48,3 +48,6 @@ config.yml
 
 # Postman
 /postman
+
+# Documentation (generated/local)
+/docs
