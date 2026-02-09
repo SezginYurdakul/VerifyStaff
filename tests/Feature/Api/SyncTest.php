@@ -192,17 +192,16 @@ class SyncTest extends TestCase
             ->assertJsonStructure([
                 'message',
                 'server_time',
-                'synced_count',
-                'duplicate_count',
-                'error_count',
-                'synced',
-                'duplicates',
+                'stats' => ['success', 'failed', 'skipped'],
+                'synced_ids',
                 'errors',
             ])
             ->assertJson([
-                'synced_count' => 1,
-                'duplicate_count' => 0,
-                'error_count' => 0,
+                'stats' => [
+                    'success' => 1,
+                    'failed' => 0,
+                    'skipped' => 0,
+                ],
             ]);
 
         $this->assertDatabaseHas('attendance_logs', [
@@ -253,7 +252,7 @@ class SyncTest extends TestCase
             ]);
 
         $response->assertOk()
-            ->assertJson(['synced_count' => 1]);
+            ->assertJson(['stats' => ['success' => 1]]);
 
         $checkOut = AttendanceLog::where('worker_id', $worker->id)
             ->where('type', 'out')
@@ -308,8 +307,10 @@ class SyncTest extends TestCase
 
         $response->assertOk()
             ->assertJson([
-                'synced_count' => 0,
-                'duplicate_count' => 1,
+                'stats' => [
+                    'success' => 0,
+                    'skipped' => 1,
+                ],
             ]);
     }
 
@@ -336,8 +337,10 @@ class SyncTest extends TestCase
 
         $response->assertOk()
             ->assertJson([
-                'synced_count' => 0,
-                'error_count' => 1,
+                'stats' => [
+                    'success' => 0,
+                    'failed' => 1,
+                ],
             ]);
 
         $errors = $response->json('errors');
@@ -372,7 +375,7 @@ class SyncTest extends TestCase
 
         // Kiosk mode allows sync but flags the record (no TOTP verification)
         $response->assertOk()
-            ->assertJson(['synced_count' => 1]);
+            ->assertJson(['stats' => ['success' => 1]]);
 
         $this->assertDatabaseHas('attendance_logs', [
             'worker_id' => $worker->id,
@@ -445,7 +448,7 @@ class SyncTest extends TestCase
             ]);
 
         $response->assertOk()
-            ->assertJson(['synced_count' => 1]);
+            ->assertJson(['stats' => ['success' => 1]]);
 
         // Flag reason may include multiple reasons (TOTP not provided + Future timestamp)
         $log = AttendanceLog::where('worker_id', $worker->id)->first();

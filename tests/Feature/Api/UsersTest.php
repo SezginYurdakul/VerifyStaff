@@ -250,4 +250,151 @@ class UsersTest extends TestCase
         $response->assertStatus(422)
             ->assertJson(['message' => 'User has already accepted the invitation']);
     }
+
+    // ==================== Show Tests ====================
+
+    public function test_admin_can_get_single_user(): void
+    {
+        $user = User::factory()->create([
+            'name' => 'John Doe',
+            'role' => 'worker',
+        ]);
+
+        $response = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->getJson("/api/v1/users/{$user->id}");
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'user' => ['id', 'name', 'email', 'role', 'status'],
+            ])
+            ->assertJsonPath('user.name', 'John Doe');
+    }
+
+    public function test_non_admin_cannot_get_single_user(): void
+    {
+        $worker = User::factory()->create(['role' => 'worker']);
+        $workerToken = $worker->createToken('auth_token')->plainTextToken;
+        $otherUser = User::factory()->create();
+
+        $response = $this->withHeader('Authorization', "Bearer {$workerToken}")
+            ->getJson("/api/v1/users/{$otherUser->id}");
+
+        $response->assertStatus(403);
+    }
+
+    // ==================== Restore Tests ====================
+
+    public function test_admin_can_restore_soft_deleted_user(): void
+    {
+        $user = User::factory()->create(['role' => 'worker']);
+        $user->delete();
+
+        $response = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->postJson("/api/v1/users/{$user->id}/restore");
+
+        $response->assertOk()
+            ->assertJson(['message' => 'User restored successfully']);
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'deleted_at' => null,
+        ]);
+    }
+
+    public function test_restore_nonexistent_user_returns_404(): void
+    {
+        $response = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->postJson('/api/v1/users/99999/restore');
+
+        $response->assertStatus(404)
+            ->assertJson(['message' => 'User not found']);
+    }
+
+    public function test_non_admin_cannot_restore_user(): void
+    {
+        $rep = User::factory()->create(['role' => 'representative']);
+        $repToken = $rep->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$repToken}")
+            ->postJson('/api/v1/users/1/restore');
+
+        $response->assertStatus(403);
+    }
+
+    // ==================== Force Delete Tests ====================
+
+    public function test_admin_can_force_delete_soft_deleted_user(): void
+    {
+        $user = User::factory()->create(['role' => 'worker']);
+        $userId = $user->id;
+        $user->delete();
+
+        $response = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->deleteJson("/api/v1/users/{$userId}/force");
+
+        $response->assertOk()
+            ->assertJson(['message' => 'User permanently deleted']);
+
+        // Should be completely gone from database
+        $this->assertDatabaseMissing('users', ['id' => $userId]);
+    }
+
+    public function test_force_delete_nonexistent_user_returns_404(): void
+    {
+        $response = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->deleteJson('/api/v1/users/99999/force');
+
+        $response->assertStatus(404)
+            ->assertJson(['message' => 'User not found']);
+    }
+
+    public function test_non_admin_cannot_force_delete_user(): void
+    {
+        $worker = User::factory()->create(['role' => 'worker']);
+        $workerToken = $worker->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$workerToken}")
+            ->deleteJson('/api/v1/users/1/force');
+
+        $response->assertStatus(403);
+    }
+
+    // ==================== Trashed Filter Tests ====================
+
+    public function test_admin_can_list_trashed_users(): void
+    {
+        $user1 = User::factory()->create(['role' => 'worker']);
+        $user2 = User::factory()->create(['role' => 'worker']);
+        $user1->delete();
+
+        $response = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->getJson('/api/v1/users?trashed=true');
+
+        $response->assertOk();
+        $this->assertEquals(1, $response->json('total'));
+    }
+
+    // ==================== Department Filter Tests ====================
+
+    public function test_admin_can_filter_users_by_department(): void
+    {
+        $dept = \App\Models\Department::create([
+            'name' => 'Warehouse',
+            'code' => 'WH',
+            'shift_start' => '09:00',
+            'shift_end' => '18:00',
+        ]);
+
+        User::factory()->count(2)->create([
+            'role' => 'worker',
+            'department_id' => $dept->id,
+        ]);
+        User::factory()->create(['role' => 'worker', 'department_id' => null]);
+
+        $response = $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->getJson("/api/v1/users?department_id={$dept->id}");
+
+        $response->assertOk();
+        $this->assertEquals(2, $response->json('total'));
+    }
 }

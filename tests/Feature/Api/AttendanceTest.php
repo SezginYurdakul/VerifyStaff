@@ -434,4 +434,263 @@ class AttendanceTest extends TestCase
 
         $response->assertStatus(401);
     }
+
+    // ==================== Sync Offline Logs Tests ====================
+
+    public function test_worker_can_sync_offline_kiosk_logs(): void
+    {
+        $this->enableKioskMode();
+        $kiosk = $this->createActiveKiosk();
+
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $deviceTime = now()->subMinutes(30)->toIso8601String();
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => $kiosk->code,
+                        'device_time' => $deviceTime,
+                        'device_timezone' => 'Europe/Istanbul',
+                        'event_id' => 'offline-event-1',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'message' => 'Sync completed.',
+                'stats' => [
+                    'success' => 1,
+                    'failed' => 0,
+                    'skipped' => 0,
+                ],
+            ]);
+
+        $this->assertDatabaseHas('attendance_logs', [
+            'worker_id' => $worker->id,
+            'kiosk_id' => $kiosk->code,
+            'flagged' => true, // No TOTP provided
+        ]);
+    }
+
+    public function test_sync_offline_flags_logs_without_totp(): void
+    {
+        $this->enableKioskMode();
+        $kiosk = $this->createActiveKiosk();
+
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => $kiosk->code,
+                        'device_time' => now()->subMinutes(10)->toIso8601String(),
+                        'event_id' => 'offline-no-totp',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk();
+
+        $log = AttendanceLog::where('worker_id', $worker->id)->first();
+        $this->assertTrue($log->flagged);
+        $this->assertStringContainsString('TOTP not provided', $log->flag_reason);
+    }
+
+    public function test_sync_offline_detects_duplicate_event_ids(): void
+    {
+        $this->enableKioskMode();
+        $kiosk = $this->createActiveKiosk();
+
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $deviceTime = now()->subHours(2)->toIso8601String();
+
+        // First sync
+        $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => $kiosk->code,
+                        'device_time' => $deviceTime,
+                        'event_id' => 'offline-dup-1',
+                    ],
+                ],
+            ]);
+
+        // Second sync with same device_time (generates same server event_id)
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => $kiosk->code,
+                        'device_time' => $deviceTime,
+                        'event_id' => 'offline-dup-2',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'stats' => [
+                    'success' => 0,
+                    'skipped' => 1,
+                ],
+            ]);
+    }
+
+    public function test_sync_offline_reports_error_for_invalid_kiosk(): void
+    {
+        $this->enableKioskMode();
+
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => 'NONEXISTENT',
+                        'device_time' => now()->subMinutes(10)->toIso8601String(),
+                        'event_id' => 'offline-invalid-kiosk',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'stats' => [
+                    'success' => 0,
+                    'failed' => 1,
+                ],
+            ]);
+    }
+
+    public function test_sync_offline_fails_when_kiosk_mode_disabled(): void
+    {
+        Setting::updateOrCreate(
+            ['key' => 'attendance_mode'],
+            ['value' => 'representative', 'group' => 'attendance']
+        );
+
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => 'KIOSK001',
+                        'device_time' => now()->toIso8601String(),
+                        'event_id' => 'offline-1',
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(403)
+            ->assertJson(['message' => 'Kiosk mode is not enabled.']);
+    }
+
+    public function test_sync_offline_fails_for_non_worker(): void
+    {
+        $this->enableKioskMode();
+
+        $admin = User::factory()->create(['role' => 'admin']);
+        $token = $admin->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => 'KIOSK001',
+                        'device_time' => now()->toIso8601String(),
+                        'event_id' => 'offline-1',
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(403)
+            ->assertJson(['message' => 'Only workers can sync offline kiosk logs.']);
+    }
+
+    public function test_sync_offline_validates_logs_array_required(): void
+    {
+        $this->enableKioskMode();
+
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', []);
+
+        $response->assertStatus(422);
+    }
+
+    public function test_sync_offline_requires_authentication(): void
+    {
+        $response = $this->postJson('/api/v1/attendance/sync-offline', [
+            'logs' => [],
+        ]);
+
+        $response->assertStatus(401);
+    }
+
+    public function test_sync_offline_can_process_multiple_logs(): void
+    {
+        $this->enableKioskMode();
+        $kiosk = $this->createActiveKiosk();
+
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->postJson('/api/v1/attendance/sync-offline', [
+                'logs' => [
+                    [
+                        'kiosk_code' => $kiosk->code,
+                        'device_time' => now()->subHours(8)->toIso8601String(),
+                        'event_id' => 'offline-multi-1',
+                    ],
+                    [
+                        'kiosk_code' => $kiosk->code,
+                        'device_time' => now()->subMinutes(30)->toIso8601String(),
+                        'event_id' => 'offline-multi-2',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'stats' => ['success' => 2],
+            ]);
+
+        $this->assertEquals(2, AttendanceLog::where('worker_id', $worker->id)->count());
+    }
 }

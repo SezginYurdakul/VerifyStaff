@@ -420,6 +420,163 @@ class SettingsTest extends TestCase
         Event::assertDispatched(SettingChanged::class);
     }
 
+    // ==================== Update Shifts Tests ====================
+
+    public function test_admin_can_update_shifts(): void
+    {
+        Event::fake([SettingChanged::class]);
+
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $token = $admin->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/settings/config/shifts', [
+                'shifts' => [
+                    [
+                        'name' => 'Day Shift',
+                        'code' => 'day',
+                        'start_time' => '08:00',
+                        'end_time' => '16:00',
+                        'break_minutes' => 60,
+                    ],
+                    [
+                        'name' => 'Night Shift',
+                        'code' => 'night',
+                        'start_time' => '22:00',
+                        'end_time' => '06:00',
+                        'break_minutes' => 30,
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'message' => 'Shifts updated successfully',
+            ])
+            ->assertJsonStructure(['shifts']);
+
+        Event::assertDispatched(SettingChanged::class);
+    }
+
+    public function test_non_admin_cannot_update_shifts(): void
+    {
+        $worker = User::factory()->create([
+            'role' => 'worker',
+            'status' => 'active',
+        ]);
+        $token = $worker->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/settings/config/shifts', [
+                'shifts' => [
+                    [
+                        'name' => 'Day',
+                        'code' => 'day',
+                        'start_time' => '08:00',
+                        'end_time' => '16:00',
+                        'break_minutes' => 60,
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(403);
+    }
+
+    public function test_update_shifts_validates_required_fields(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $token = $admin->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/settings/config/shifts', [
+                'shifts' => [
+                    [
+                        'name' => 'Day Shift',
+                        // missing code, start_time, end_time, break_minutes
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(422);
+    }
+
+    public function test_update_shifts_validates_time_format(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $token = $admin->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/settings/config/shifts', [
+                'shifts' => [
+                    [
+                        'name' => 'Day Shift',
+                        'code' => 'day',
+                        'start_time' => 'invalid',
+                        'end_time' => '16:00',
+                        'break_minutes' => 60,
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(422);
+    }
+
+    public function test_update_shifts_rejects_duplicate_codes(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $token = $admin->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/settings/config/shifts', [
+                'shifts' => [
+                    [
+                        'name' => 'Day Shift A',
+                        'code' => 'day',
+                        'start_time' => '08:00',
+                        'end_time' => '16:00',
+                        'break_minutes' => 60,
+                    ],
+                    [
+                        'name' => 'Day Shift B',
+                        'code' => 'day', // duplicate
+                        'start_time' => '09:00',
+                        'end_time' => '17:00',
+                        'break_minutes' => 60,
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(422);
+    }
+
+    public function test_update_shifts_requires_at_least_one_shift(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+        ]);
+        $token = $admin->createToken('auth_token')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', "Bearer {$token}")
+            ->putJson('/api/v1/settings/config/shifts', [
+                'shifts' => [],
+            ]);
+
+        $response->assertStatus(422);
+    }
+
     // ==================== Auth Tests ====================
 
     public function test_settings_endpoints_require_authentication(): void
