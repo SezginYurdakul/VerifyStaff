@@ -193,7 +193,7 @@ class ReportsController extends Controller
             'per_page' => $logs->perPage(),
             'current_page' => $logs->currentPage(),
             'last_page' => $logs->lastPage(),
-            'logs' => $logs->items(),
+            'logs' => AttendanceLogResource::collection($logs),
         ]);
     }
 
