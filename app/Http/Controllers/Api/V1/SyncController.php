@@ -4,22 +4,18 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\SyncLogsRequest;
-use App\Http\Resources\AttendanceLogResource;
 use App\Http\Resources\WorkerResource;
 use App\Jobs\ProcessAttendanceSync;
-use App\Models\AttendanceLog;
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\AttendanceSyncService;
 use App\Services\AuditLogger;
-use App\Services\TotpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 
 class SyncController extends Controller
 {
     public function __construct(
-        private TotpService $totpService
+        private AttendanceSyncService $syncService
     ) {}
 
     public function getStaffList(Request $request): JsonResponse
@@ -63,14 +59,37 @@ class SyncController extends Controller
             return $this->syncLogsAsync($logs, $user);
         }
 
-        return $this->syncLogsSync($logs, $user);
+        $result = $this->syncService->processRepLogs($logs, $user);
+
+        $syncedIds = array_merge(
+            array_map(fn ($log) => $log->event_id, $result['synced']),
+            $result['duplicates']
+        );
+
+        // Log sync operation
+        AuditLogger::sync('sync_completed', $user->id, [
+            'synced_count' => count($result['synced']),
+            'duplicate_count' => count($result['duplicates']),
+            'error_count' => count($result['errors']),
+        ]);
+
+        return response()->json([
+            'message' => 'Sync completed.',
+            'server_time' => now()->toIso8601String(),
+            'stats' => [
+                'success' => count($result['synced']),
+                'failed' => count($result['errors']),
+                'skipped' => count($result['duplicates']),
+            ],
+            'synced_ids' => $syncedIds,
+            'errors' => $result['errors'],
+        ]);
     }
 
     private function syncLogsAsync(array $logs, User $user): JsonResponse
     {
         ProcessAttendanceSync::dispatch($logs, $user->id);
 
-        // Log sync operation
         AuditLogger::sync('async_queued', $user->id, [
             'log_count' => count($logs),
         ]);
@@ -83,212 +102,11 @@ class SyncController extends Controller
         ], 202);
     }
 
-    private function syncLogsSync(array $logs, User $user): JsonResponse
-    {
-        $synced = [];
-        $duplicates = [];
-        $errors = [];
-
-        // Get settings from database
-        $config = Setting::getWorkHoursConfig();
-        $workStartTime = $config['work_start_time'];
-        $workEndTime = $config['work_end_time'];
-        $regularWorkMinutes = $config['regular_work_minutes'];
-        $lateThresholdMinutes = $config['late_threshold_minutes'];
-        $duplicateScanWindow = $config['duplicate_scan_window_minutes'];
-
-        foreach ($logs as $log) {
-            $worker = User::with('department')
-                ->where('id', $log['worker_id'])
-                ->where('role', 'worker')
-                ->first();
-
-            if (!$worker) {
-                $errors[] = [
-                    'worker_id' => $log['worker_id'],
-                    'reason' => 'Worker not found',
-                ];
-                continue;
-            }
-
-            $deviceTime = Carbon::parse($log['device_time']);
-
-            // Auto-detect type if not provided (toggle mode)
-            $type = $log['type'] ?? $this->detectAttendanceType($log['worker_id'], $deviceTime);
-
-            $eventId = AttendanceLog::generateEventId(
-                $log['worker_id'],
-                $user->id,
-                $log['device_time'],
-                $type
-            );
-
-            $existing = AttendanceLog::where('event_id', $eventId)->first();
-
-            if ($existing) {
-                $duplicates[] = $eventId;
-                continue;
-            }
-
-            // Verify scanned TOTP against device_time to detect tampering
-            $scannedTotp = $log['scanned_totp'] ?? null;
-            $totpVerified = false;
-
-            if ($scannedTotp && $worker->secret_token) {
-                $totpVerified = $this->totpService->verifyCodeAtTime(
-                    $worker->secret_token,
-                    $scannedTotp,
-                    $deviceTime->timestamp
-                );
-            }
-
-            // Flag based on TOTP verification result
-            $flagged = !$totpVerified;
-            $flagReason = $totpVerified
-                ? null
-                : ($scannedTotp
-                    ? 'TOTP mismatch - possible tampering of device_time'
-                    : 'TOTP not provided');
-
-            if ($deviceTime->isFuture()) {
-                $flagged = true;
-                $flagReason = ($flagReason ? $flagReason . '; ' : '') . 'Future timestamp detected';
-            }
-
-            // Check for duplicate scan within configured window
-            $recentScan = AttendanceLog::where('worker_id', $log['worker_id'])
-                ->where('type', $type)
-                ->whereBetween('device_time', [
-                    $deviceTime->copy()->subMinutes($duplicateScanWindow),
-                    $deviceTime->copy()->addMinutes($duplicateScanWindow)
-                ])
-                ->exists();
-
-            if ($recentScan) {
-                $flagged = true;
-                $flagReason = ($flagReason ? $flagReason . '; ' : '') . "Duplicate scan within {$duplicateScanWindow} minutes";
-            }
-
-            $logData = [
-                'event_id' => $eventId,
-                'worker_id' => $log['worker_id'],
-                'rep_id' => $user->id,
-                'type' => $type,
-                'device_time' => $deviceTime,
-                'device_timezone' => $log['device_timezone'] ?? 'UTC',
-                'sync_time' => now(),
-                'sync_attempt' => $log['sync_attempt'] ?? 1,
-                'offline_duration_seconds' => $log['offline_duration_seconds'] ?? 0,
-                'sync_status' => 'synced',
-                'flagged' => $flagged,
-                'flag_reason' => $flagReason,
-                'latitude' => $log['latitude'] ?? null,
-                'longitude' => $log['longitude'] ?? null,
-            ];
-
-            // Calculate fields based on type
-            // Use worker's department config if available, otherwise fall back to global settings
-            $workerConfig = $worker->getWorkHoursConfig();
-            $workerWorkStart = $workerConfig['work_start_time'];
-            $workerWorkEnd = $workerConfig['work_end_time'];
-            $workerLateThreshold = $workerConfig['late_threshold_minutes'];
-            $workerRegularMinutes = $workerConfig['regular_work_minutes'];
-            $workerEarlyDepartureThreshold = $workerConfig['early_departure_threshold_minutes'];
-
-            if ($type === 'in') {
-                // Check for late arrival using worker's department shift settings
-                $expectedStart = $deviceTime->copy()->setTimeFromTimeString($workerWorkStart);
-                $graceEnd = $expectedStart->copy()->addMinutes($workerLateThreshold);
-                $logData['is_late'] = $deviceTime->gt($graceEnd);
-            } elseif ($type === 'out') {
-                // Find matching check-in (unpaired, same day, before this check-out)
-                $checkIn = AttendanceLog::where('worker_id', $log['worker_id'])
-                    ->where('type', 'in')
-                    ->whereNull('paired_log_id')
-                    ->whereDate('device_time', $deviceTime->toDateString())
-                    ->where('device_time', '<', $deviceTime)
-                    ->orderBy('device_time', 'desc')
-                    ->first();
-
-                if ($checkIn) {
-                    // Calculate work duration
-                    $workMinutes = $checkIn->device_time->diffInMinutes($deviceTime);
-                    $logData['work_minutes'] = $workMinutes;
-                    $logData['paired_log_id'] = $checkIn->id;
-
-                    // Check for overtime using worker's department settings
-                    if ($workMinutes > $workerRegularMinutes) {
-                        $logData['is_overtime'] = true;
-                        $logData['overtime_minutes'] = $workMinutes - $workerRegularMinutes;
-                    } else {
-                        $logData['is_overtime'] = false;
-                        $logData['overtime_minutes'] = 0;
-                    }
-
-                    // Check for early departure using worker's department settings
-                    $expectedEnd = $deviceTime->copy()->setTimeFromTimeString($workerWorkEnd);
-                    $earlyThreshold = $expectedEnd->copy()->subMinutes($workerEarlyDepartureThreshold);
-                    $logData['is_early_departure'] = $deviceTime->lt($earlyThreshold);
-                }
-            }
-
-            $attendanceLog = AttendanceLog::create($logData);
-
-            // If this is a check-out with a paired check-in, update the check-in's paired_log_id
-            if ($type === 'out' && isset($checkIn)) {
-                $checkIn->update(['paired_log_id' => $attendanceLog->id]);
-            }
-
-            $synced[] = new AttendanceLogResource($attendanceLog);
-        }
-
-        // Log sync operation
-        AuditLogger::sync('sync_completed', $user->id, [
-            'synced_count' => count($synced),
-            'duplicate_count' => count($duplicates),
-            'error_count' => count($errors),
-        ]);
-
-        return response()->json([
-            'message' => 'Logs processed successfully',
-            'server_time' => now()->toIso8601String(),
-            'synced_count' => count($synced),
-            'duplicate_count' => count($duplicates),
-            'error_count' => count($errors),
-            'synced' => $synced,
-            'duplicates' => $duplicates,
-            'errors' => $errors,
-        ]);
-    }
-
     public function getServerTime(): JsonResponse
     {
         return response()->json([
             'server_time' => now()->toIso8601String(),
             'timestamp' => now()->timestamp,
         ]);
-    }
-
-    /**
-     * Detect attendance type based on worker's last log.
-     * Toggle mode: if last log was 'in', return 'out' and vice versa.
-     * Supports night shifts (check-in on day X, check-out on day X+1).
-     */
-    private function detectAttendanceType(int $workerId, Carbon $deviceTime): string
-    {
-        // Get the most recent log for this worker (last 24 hours to support night shifts)
-        $lastLog = AttendanceLog::where('worker_id', $workerId)
-            ->where('device_time', '>=', $deviceTime->copy()->subHours(24))
-            ->where('device_time', '<', $deviceTime)
-            ->orderBy('device_time', 'desc')
-            ->first();
-
-        // If no recent log or last was 'out', this should be 'in'
-        // If last was 'in' (still open), this should be 'out'
-        if (!$lastLog || $lastLog->type === 'out') {
-            return 'in';
-        }
-
-        return 'out';
     }
 }

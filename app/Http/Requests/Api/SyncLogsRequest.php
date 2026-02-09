@@ -14,7 +14,7 @@ class SyncLogsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'logs' => ['required', 'array', 'min:1'],
+            'logs' => ['required', 'array', 'min:1', 'max:500'],
             'logs.*.worker_id' => ['required', 'integer'],
             'logs.*.type' => ['sometimes', 'nullable', 'in:in,out'],  // Optional - auto-detected if not provided
             'logs.*.device_time' => ['required', 'date'],
