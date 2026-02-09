@@ -428,7 +428,7 @@ export default function ReportsPage() {
     const [period, setPeriod] = useState<PeriodType>('daily');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [page, setPage] = useState(1);
-    const [perPage, setPerPage] = useState<PerPageOption>(50);
+    const [perPage, setPerPage] = useState<PerPageOption>(10);
 
     const getDateString = () => currentDate.toISOString().split('T')[0];
     const getMonthString = () => {
@@ -590,19 +590,6 @@ export default function ReportsPage() {
                 </div>
 
                 {/* Pagination Controls - Top */}
-                {paginationInfo && (
-                    <div className="mb-4 pb-4 border-b border-gray-200">
-                        <PaginationControls
-                            currentPage={paginationInfo.currentPage}
-                            lastPage={paginationInfo.lastPage}
-                            total={paginationInfo.total}
-                            perPage={perPage}
-                            onPageChange={setPage}
-                            onPerPageChange={handlePerPageChange}
-                        />
-                    </div>
-                )}
-
                 {isLoading ? (
                     <div className="flex items-center justify-center h-64">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />

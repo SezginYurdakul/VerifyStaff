@@ -8,6 +8,19 @@ import type { AxiosError } from 'axios';
 
 let syncInProgress = false;
 
+const SYNC_CHUNK_SIZE = 500;
+
+/**
+ * Split an array into chunks of a given size.
+ */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
 /**
  * Check if an error is a 403 Forbidden (role/mode mismatch).
  * These are expected when e.g. a worker tries to sync rep logs or mode changed.
@@ -102,30 +115,33 @@ async function syncRepLogs(
   let synced = 0;
   let failed = 0;
 
-  const logsToSync: SyncLogsRequest['logs'] = logs.map((log) => ({
-    event_id: log.event_id,
-    worker_id: log.worker_id,
-    type: log.type,
-    device_time: log.device_time,
-    device_timezone: log.device_timezone,
-    latitude: log.latitude,
-    longitude: log.longitude,
-    scanned_totp: log.scanned_totp,
-  }));
+  const chunks = chunk(logs, SYNC_CHUNK_SIZE);
 
-  const response = await syncLogs({ logs: logsToSync });
+  for (const batch of chunks) {
+    const logsToSync: SyncLogsRequest['logs'] = batch.map((log) => ({
+      event_id: log.event_id,
+      worker_id: log.worker_id,
+      type: log.type,
+      device_time: log.device_time,
+      device_timezone: log.device_timezone,
+      latitude: log.latitude,
+      longitude: log.longitude,
+      scanned_totp: log.scanned_totp,
+    }));
 
-  // Backend generates its own event_ids, so we can't match by event_id.
-  // Mark logs based on whether their worker_id appears in errors.
-  const errorWorkerIds = new Set(response.errors.map((e: { worker_id: number }) => e.worker_id));
+    const response = await syncLogs({ logs: logsToSync });
 
-  for (const log of logs) {
-    if (errorWorkerIds.has(log.worker_id)) {
-      await updateLogSyncStatus(log.id, 'failed');
-      failed++;
-    } else {
-      await updateLogSyncStatus(log.id, 'synced');
-      synced++;
+    const syncedIds = new Set(response.synced_ids);
+    const errorWorkerIds = new Set(response.errors.map((e: { worker_id: number }) => e.worker_id));
+
+    for (const log of batch) {
+      if (syncedIds.has(log.event_id) || !errorWorkerIds.has(log.worker_id)) {
+        await updateLogSyncStatus(log.id, 'synced');
+        synced++;
+      } else {
+        await updateLogSyncStatus(log.id, 'failed');
+        failed++;
+      }
     }
   }
 
@@ -141,25 +157,29 @@ async function syncKioskLogs(
   let synced = 0;
   let failed = 0;
 
-  const response = await syncOfflineKioskLogs({
-    logs: logs.map((log) => ({
-      kiosk_code: log.kiosk_id!,
-      device_time: log.device_time,
-      device_timezone: log.device_timezone,
-      event_id: log.event_id,
-      scanned_totp: log.scanned_totp,
-    })),
-  });
+  const chunks = chunk(logs, SYNC_CHUNK_SIZE);
 
-  const errorEventIds = new Set(response.errors.map(e => e.event_id));
+  for (const batch of chunks) {
+    const response = await syncOfflineKioskLogs({
+      logs: batch.map((log) => ({
+        kiosk_code: log.kiosk_id!,
+        device_time: log.device_time,
+        device_timezone: log.device_timezone,
+        event_id: log.event_id,
+        scanned_totp: log.scanned_totp,
+      })),
+    });
 
-  for (const log of logs) {
-    if (errorEventIds.has(log.event_id)) {
-      await updateLogSyncStatus(log.id, 'failed');
-      failed++;
-    } else {
-      await updateLogSyncStatus(log.id, 'synced');
-      synced++;
+    const syncedIds = new Set(response.synced_ids);
+
+    for (const log of batch) {
+      if (syncedIds.has(log.event_id)) {
+        await updateLogSyncStatus(log.id, 'synced');
+        synced++;
+      } else {
+        await updateLogSyncStatus(log.id, 'failed');
+        failed++;
+      }
     }
   }
 

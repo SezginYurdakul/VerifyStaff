@@ -39,7 +39,6 @@ export interface Department {
   is_active: boolean;
   workers_count?: number;
   created_at: string;
-  updated_at: string;
 }
 
 // Auth types
@@ -136,7 +135,6 @@ export interface Kiosk {
   status: KioskStatus;
   last_heartbeat_at: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 // Settings types
@@ -221,11 +219,12 @@ export interface SyncLogsRequest {
 export interface SyncLogsResponse {
   message: string;
   server_time: string;
-  synced_count: number;
-  duplicate_count: number;
-  error_count: number;
-  synced: AttendanceLog[];
-  duplicates: string[]; // event_ids
+  stats: {
+    success: number;
+    failed: number;
+    skipped: number;
+  };
+  synced_ids: string[];
   errors: {
     worker_id: number;
     reason: string;

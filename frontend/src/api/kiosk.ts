@@ -66,11 +66,12 @@ export interface OfflineKioskSyncRequest {
 export interface OfflineKioskSyncResponse {
   message: string;
   server_time: string;
-  synced_count: number;
-  duplicate_count: number;
-  error_count: number;
-  synced: { event_id: string; type: string }[];
-  duplicates: string[];
+  stats: {
+    success: number;
+    failed: number;
+    skipped: number;
+  };
+  synced_ids: string[];
   errors: { event_id: string; reason: string }[];
 }
 
