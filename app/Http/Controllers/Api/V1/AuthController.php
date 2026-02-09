@@ -34,7 +34,13 @@ class AuthController extends Controller
             ]);
         }
 
-        $user->tokens()->delete();
+        }
+
+        // 🔐 ONLY workers are limited to single-device login
+        if ($user->role === 'worker') {
+           $user->tokens()->delete();
+        }
+ 
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
