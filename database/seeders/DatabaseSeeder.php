@@ -44,6 +44,12 @@ class DatabaseSeeder extends Seeder
         // Workers
         $workers = [
             [
+                'name' => 'Test Worker',
+                'email' => 'worker@verifystaff.com',
+                'phone' => '+905550000002',
+                'employee_id' => 'WRK001',
+            ],
+            [
                 'name' => 'Jan de Vries',
                 'email' => 'jan@example.com',
                 'phone' => '+31687654321',

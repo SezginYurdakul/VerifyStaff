@@ -6,9 +6,10 @@ use App\Models\User;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\SerializesModels;
 
-class UserInviteMail extends Mailable
+class UserInviteMail extends Mailable implements ShouldQueue
 {
     use SerializesModels;
 
