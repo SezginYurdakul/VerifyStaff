@@ -284,7 +284,8 @@ QUEUE_CONNECTION=redis
 
 ## License
 
-This project is proprietary software.
+This project is shared publicly for demonstration purposes.
+All rights reserved.
 
 ## Documentation
 
