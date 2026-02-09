@@ -3,12 +3,13 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\StoreUserRequest;
+use App\Http\Requests\Api\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Services\InviteService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class UsersController extends Controller
 {
@@ -60,22 +61,9 @@ class UsersController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(StoreUserRequest $request): JsonResponse
     {
-        $user = $request->user();
-
-        if (!$user->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:users,email'],
-            'phone' => ['nullable', 'string', 'max:20'],
-            'employee_id' => ['nullable', 'string', 'max:50', 'unique:users,employee_id'],
-            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
-            'role' => ['required', Rule::in(['admin', 'representative', 'worker'])],
-        ]);
+        $validated = $request->validated();
 
         $newUser = User::create([
             'name' => $validated['name'],
@@ -113,25 +101,9 @@ class UsersController extends Controller
         ]);
     }
 
-    public function update(Request $request, User $user): JsonResponse
+    public function update(UpdateUserRequest $request, User $user): JsonResponse
     {
-        $authUser = $request->user();
-
-        if (!$authUser->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $validated = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255'],
-            'email' => ['sometimes', 'email', Rule::unique('users', 'email')->ignore($user->id)],
-            'phone' => ['nullable', 'string', 'max:20'],
-            'employee_id' => ['nullable', 'string', 'max:50', Rule::unique('users', 'employee_id')->ignore($user->id)],
-            'department_id' => ['nullable', 'integer', 'exists:departments,id'],
-            'role' => ['sometimes', Rule::in(['admin', 'representative', 'worker'])],
-            'status' => ['sometimes', Rule::in(['active', 'inactive', 'suspended'])],
-        ]);
-
-        $user->update($validated);
+        $user->update($request->validated());
 
         return response()->json([
             'message' => 'User updated successfully',

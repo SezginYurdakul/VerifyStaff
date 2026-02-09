@@ -3,10 +3,11 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\AcceptInviteRequest;
+use App\Http\Requests\Api\ValidateInviteRequest;
 use App\Http\Resources\UserResource;
 use App\Services\InviteService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class InviteController extends Controller
 {
@@ -17,13 +18,9 @@ class InviteController extends Controller
     /**
      * Validate an invite token.
      */
-    public function validate(Request $request): JsonResponse
+    public function validate(ValidateInviteRequest $request): JsonResponse
     {
-        $request->validate([
-            'token' => ['required', 'string'],
-        ]);
-
-        $user = $this->inviteService->validateToken($request->token);
+        $user = $this->inviteService->validateToken($request->validated('token'));
 
         if (!$user) {
             return response()->json([
@@ -44,14 +41,9 @@ class InviteController extends Controller
     /**
      * Accept invitation and set password.
      */
-    public function accept(Request $request): JsonResponse
+    public function accept(AcceptInviteRequest $request): JsonResponse
     {
-        $request->validate([
-            'token' => ['required', 'string'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
-        ]);
-
-        $user = $this->inviteService->validateToken($request->token);
+        $user = $this->inviteService->validateToken($request->validated('token'));
 
         if (!$user) {
             return response()->json([
@@ -59,7 +51,7 @@ class InviteController extends Controller
             ], 422);
         }
 
-        $this->inviteService->acceptInvite($user, $request->password);
+        $this->inviteService->acceptInvite($user, $request->validated('password'));
 
         // Create auth token for automatic login
         $token = $user->createToken('auth_token')->plainTextToken;

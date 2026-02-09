@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\StoreDepartmentRequest;
+use App\Http\Requests\Api\UpdateDepartmentRequest;
+use App\Http\Resources\DepartmentResource;
 use App\Models\Department;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class DepartmentsController extends Controller
 {
@@ -30,7 +32,7 @@ class DepartmentsController extends Controller
         $departments = $query->orderBy('name')->get();
 
         return response()->json([
-            'departments' => $departments,
+            'departments' => DepartmentResource::collection($departments),
             'total' => $departments->count(),
         ]);
     }
@@ -38,21 +40,9 @@ class DepartmentsController extends Controller
     /**
      * Create a new department.
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreDepartmentRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'code' => 'required|string|max:50|unique:departments,code',
-            'shift_start' => 'required|date_format:H:i',
-            'shift_end' => 'required|date_format:H:i',
-            'late_threshold_minutes' => 'integer|min:0|max:120',
-            'early_departure_threshold_minutes' => 'integer|min:0|max:120',
-            'regular_work_minutes' => 'integer|min:60|max:1440',
-            'working_days' => 'nullable|array',
-            'working_days.*' => 'string|in:monday,tuesday,wednesday,thursday,friday,saturday,sunday',
-            'description' => 'nullable|string|max:500',
-            'is_active' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         // Set defaults
         $validated['late_threshold_minutes'] = $validated['late_threshold_minutes'] ?? 15;
@@ -67,7 +57,7 @@ class DepartmentsController extends Controller
 
         return response()->json([
             'message' => 'Department created successfully',
-            'department' => $department,
+            'department' => new DepartmentResource($department),
         ], 201);
     }
 
@@ -81,30 +71,18 @@ class DepartmentsController extends Controller
         }])->findOrFail($id);
 
         return response()->json([
-            'department' => $department,
+            'department' => new DepartmentResource($department),
         ]);
     }
 
     /**
      * Update a department.
      */
-    public function update(Request $request, int $id): JsonResponse
+    public function update(UpdateDepartmentRequest $request, int $id): JsonResponse
     {
         $department = Department::findOrFail($id);
 
-        $validated = $request->validate([
-            'name' => 'string|max:255',
-            'code' => ['string', 'max:50', Rule::unique('departments', 'code')->ignore($id)],
-            'shift_start' => 'date_format:H:i',
-            'shift_end' => 'date_format:H:i',
-            'late_threshold_minutes' => 'integer|min:0|max:120',
-            'early_departure_threshold_minutes' => 'integer|min:0|max:120',
-            'regular_work_minutes' => 'integer|min:60|max:1440',
-            'working_days' => 'nullable|array',
-            'working_days.*' => 'string|in:monday,tuesday,wednesday,thursday,friday,saturday,sunday',
-            'description' => 'nullable|string|max:500',
-            'is_active' => 'boolean',
-        ]);
+        $validated = $request->validated();
 
         // Convert code to uppercase if provided
         if (isset($validated['code'])) {
@@ -115,7 +93,7 @@ class DepartmentsController extends Controller
 
         return response()->json([
             'message' => 'Department updated successfully',
-            'department' => $department->fresh(),
+            'department' => new DepartmentResource($department->fresh()),
         ]);
     }
 

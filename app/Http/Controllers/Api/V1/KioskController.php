@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\StoreKioskRequest;
+use App\Http\Requests\Api\UpdateKioskRequest;
+use App\Http\Resources\KioskResource;
 use App\Models\Kiosk;
 use App\Models\Setting;
 use App\Services\TotpService;
@@ -98,12 +101,10 @@ class KioskController extends Controller
             return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
         }
 
-        $kiosks = Kiosk::select(['id', 'name', 'code', 'location', 'status', 'last_heartbeat_at', 'created_at'])
-            ->orderBy('code')
-            ->get();
+        $kiosks = Kiosk::orderBy('code')->get();
 
         return response()->json([
-            'kiosks' => $kiosks,
+            'kiosks' => KioskResource::collection($kiosks),
             'total' => $kiosks->count(),
         ]);
     }
@@ -111,18 +112,9 @@ class KioskController extends Controller
     /**
      * Create a new kiosk (Admin only).
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreKioskRequest $request): JsonResponse
     {
-        if (!$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
-        }
-
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'location' => 'nullable|string|max:255',
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-        ]);
+        $validated = $request->validated();
 
         $kiosk = Kiosk::create([
             'name' => $validated['name'],
@@ -136,13 +128,7 @@ class KioskController extends Controller
 
         return response()->json([
             'message' => 'Kiosk created successfully',
-            'kiosk' => [
-                'id' => $kiosk->id,
-                'name' => $kiosk->name,
-                'code' => $kiosk->code,
-                'location' => $kiosk->location,
-                'status' => $kiosk->status,
-            ],
+            'kiosk' => new KioskResource($kiosk),
         ], 201);
     }
 
@@ -162,54 +148,26 @@ class KioskController extends Controller
         }
 
         return response()->json([
-            'kiosk' => [
-                'id' => $kiosk->id,
-                'name' => $kiosk->name,
-                'code' => $kiosk->code,
-                'location' => $kiosk->location,
-                'latitude' => $kiosk->latitude,
-                'longitude' => $kiosk->longitude,
-                'status' => $kiosk->status,
-                'last_heartbeat_at' => $kiosk->last_heartbeat_at?->toIso8601String(),
-                'created_at' => $kiosk->created_at->toIso8601String(),
-            ],
+            'kiosk' => new KioskResource($kiosk),
         ]);
     }
 
     /**
      * Update kiosk (Admin only).
      */
-    public function update(Request $request, string $kioskCode): JsonResponse
+    public function update(UpdateKioskRequest $request, string $kioskCode): JsonResponse
     {
-        if (!$request->user()->isAdmin()) {
-            return response()->json(['message' => 'Unauthorized. Admin access required.'], 403);
-        }
-
         $kiosk = Kiosk::where('code', $kioskCode)->first();
 
         if (!$kiosk) {
             return response()->json(['message' => 'Kiosk not found.'], 404);
         }
 
-        $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'location' => 'nullable|string|max:255',
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'status' => 'sometimes|in:active,inactive,maintenance',
-        ]);
-
-        $kiosk->update($validated);
+        $kiosk->update($request->validated());
 
         return response()->json([
             'message' => 'Kiosk updated successfully',
-            'kiosk' => [
-                'id' => $kiosk->id,
-                'name' => $kiosk->name,
-                'code' => $kiosk->code,
-                'location' => $kiosk->location,
-                'status' => $kiosk->status,
-            ],
+            'kiosk' => new KioskResource($kiosk->fresh()),
         ]);
     }
 
