@@ -1,6 +1,6 @@
 # VerifyStaff
 
-Offline-first attendance tracking system built with Laravel 11 and React PWA.
+Offline-first attendance tracking system built with Laravel 12 and React PWA.
 
 ## Overview
 
@@ -20,7 +20,7 @@ VerifyStaff is a lightweight, high-reliability attendance tracking solution desi
 - **Security**
   - TOTP-based QR codes (30-second validity)
   - SHA256-based event deduplication
-  - Token-based authentication (Laravel Sanctum)
+  - Authentication via Laravel Sanctum Personal Access Tokens (Bearer tokens, non-JWT)
 
 - **Comprehensive Reporting**
   - Daily/Weekly/Monthly/Yearly summaries
@@ -28,16 +28,22 @@ VerifyStaff is a lightweight, high-reliability attendance tracking solution desi
   - Overtime calculations
   - Anomaly flagging system
 
+- **Invite-Based Onboarding**
+  - Admin creates user, invite email is queued automatically
+  - Worker sets password via invite link
+  - Queued mail delivery (database queue driver)
+
 ## Tech Stack
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Laravel 11 (PHP 8.3+) |
+| Backend | Laravel 12 (PHP 8.3+) |
 | Frontend | React (Vite PWA) |
 | Database | MySQL 8.0 |
 | Offline Storage | IndexedDB (Dexie.js) |
 | Authentication | Laravel Sanctum |
 | Security | TOTP Algorithm |
+| Queue | Database driver |
 
 ## Requirements
 
@@ -73,6 +79,7 @@ docker-compose exec app php artisan migrate
 
 # Access the application
 # API: http://localhost:8000
+# Frontend (dev): http://localhost:5174
 ```
 
 ### Manual Installation
@@ -129,8 +136,19 @@ php artisan serve
 | POST | `/api/v1/users` | Create user and send invite |
 | GET | `/api/v1/users/{id}` | Get user details |
 | PUT | `/api/v1/users/{id}` | Update user |
-| DELETE | `/api/v1/users/{id}` | Delete user |
+| DELETE | `/api/v1/users/{id}` | Soft delete user |
 | POST | `/api/v1/users/{id}/resend-invite` | Resend invitation |
+| POST | `/api/v1/users/{id}/restore` | Restore soft-deleted user |
+| DELETE | `/api/v1/users/{id}/force` | Permanently delete user |
+
+### Departments (Admin)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/departments` | List departments |
+| POST | `/api/v1/departments` | Create department |
+| GET | `/api/v1/departments/{id}` | Get department details |
+| PUT | `/api/v1/departments/{id}` | Update department |
+| DELETE | `/api/v1/departments/{id}` | Delete department |
 
 ### Sync (Representative Mode)
 | Method | Endpoint | Description |
@@ -143,6 +161,7 @@ php artisan serve
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/v1/attendance/self-check` | Self check-in/out |
+| POST | `/api/v1/attendance/sync-offline` | Sync offline kiosk logs |
 | GET | `/api/v1/attendance/status` | Get attendance status |
 
 ### TOTP
@@ -151,6 +170,13 @@ php artisan serve
 | GET | `/api/v1/totp/generate` | Generate TOTP code |
 | POST | `/api/v1/totp/verify` | Verify TOTP code |
 
+### Dashboard
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/dashboard/overview` | Dashboard overview stats |
+| GET | `/api/v1/dashboard/trends` | Attendance trends |
+| GET | `/api/v1/dashboard/anomalies` | Detected anomalies |
+
 ### Reports
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -158,29 +184,40 @@ php artisan serve
 | GET | `/api/v1/reports/summary/{id}/weekly` | Weekly summary |
 | GET | `/api/v1/reports/summary/{id}/monthly` | Monthly summary |
 | GET | `/api/v1/reports/summary/{id}/yearly` | Yearly summary |
-| GET | `/api/v1/reports/all/{period}` | All workers summary |
+| GET | `/api/v1/reports/logs/{id}` | Worker attendance logs |
+| GET | `/api/v1/reports/all/daily` | All workers daily summary |
+| GET | `/api/v1/reports/all/weekly` | All workers weekly summary |
+| GET | `/api/v1/reports/all/monthly` | All workers monthly summary |
+| GET | `/api/v1/reports/all/yearly` | All workers yearly summary |
 | GET | `/api/v1/reports/flagged` | Flagged logs |
 
-### Settings (Admin)
+### Settings
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/v1/settings` | List settings |
-| PUT | `/api/v1/settings/{key}` | Update setting |
+| GET | `/api/v1/settings` | List all settings (Admin) |
+| GET | `/api/v1/settings/group/{group}` | Get settings by group (Admin) |
+| GET | `/api/v1/settings/{key}` | Get single setting (Admin) |
+| PUT | `/api/v1/settings/{key}` | Update setting (Admin) |
+| PUT | `/api/v1/settings` | Bulk update settings (Admin) |
 | GET | `/api/v1/settings/work-hours` | Get work hours config |
-| PUT | `/api/v1/settings/config/attendance-mode` | Change attendance mode |
-| PUT | `/api/v1/settings/config/shifts` | Update shift definitions |
-| PUT | `/api/v1/settings/config/working-days` | Update working days |
+| GET | `/api/v1/settings/attendance-mode` | Get attendance mode |
+| PUT | `/api/v1/settings/config/attendance-mode` | Change attendance mode (Admin) |
+| PUT | `/api/v1/settings/config/shifts` | Update shift definitions (Admin) |
+| PUT | `/api/v1/settings/config/working-days` | Update working days (Admin) |
 
 ### Kiosks (Admin)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/v1/kiosks` | List kiosks |
 | POST | `/api/v1/kiosks` | Create kiosk |
-| GET | `/api/v1/kiosk/{code}/code` | Get kiosk QR code |
+| GET | `/api/v1/kiosks/{code}` | Get kiosk details |
+| PUT | `/api/v1/kiosks/{code}` | Update kiosk |
+| POST | `/api/v1/kiosks/{code}/regenerate-token` | Regenerate kiosk token |
+| GET | `/api/v1/kiosk/{code}/code` | Get kiosk QR code (public) |
 
 ## Testing
 
-The project includes comprehensive test coverage with 258 tests.
+The project includes comprehensive test coverage with 414 tests.
 
 ```bash
 # Run all tests
@@ -198,13 +235,10 @@ php artisan test --coverage
 
 ### Test Performance
 
-Tests run in ~1.5 seconds using optimized configuration:
+Tests run in ~3 seconds using optimized configuration:
 - In-memory SQLite database
 - Reduced bcrypt rounds
 - Array drivers for cache/session/queue
-
-See [docs/TESTING.md](docs/TESTING.md) for testing strategy documentation.
-See [docs/HIGH_PERFORMANCE_TESTING.md](docs/HIGH_PERFORMANCE_TESTING.md) for performance optimization guide.
 
 ## Project Structure
 
@@ -215,10 +249,11 @@ app/
 ├── Exceptions/            # Custom exceptions
 ├── Http/
 │   ├── Controllers/Api/V1/  # API controllers
-│   ├── Requests/Api/        # Form requests
+│   ├── Requests/Api/        # Form request validation
 │   └── Resources/           # API resources
 ├── Jobs/                  # Queue jobs
 ├── Listeners/             # Event listeners
+├── Mail/                  # Mailable classes
 ├── Models/                # Eloquent models
 ├── Observers/             # Model observers
 ├── Providers/             # Service providers
@@ -255,24 +290,52 @@ tests/
 | shifts_enabled | false | Enable multiple shift support |
 | timezone | Europe/Istanbul | System timezone |
 
-### Environment Variables
+### Environment Variables (Defaults)
 
 ```env
 # Application
 APP_ENV=production
 APP_DEBUG=false
 
+# URLs
+APP_URL=http://localhost:8000
+FRONTEND_URL=http://localhost:5174
+
 # Database
 DB_CONNECTION=mysql
 DB_DATABASE=verifystaff
 
-# Security
-BCRYPT_ROUNDS=12
+# Services (default drivers)
+SESSION_DRIVER=database
+CACHE_STORE=database
+QUEUE_CONNECTION=database
 
-# Services
-CACHE_STORE=redis
-QUEUE_CONNECTION=redis
+# Logging
+LOG_LEVEL=warning
+
+# Mail (use "log" for development)
+MAIL_MAILER=log
 ```
+
+### Mail (SMTP)
+
+For production, configure SMTP in `.env`:
+
+```env
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=YOUR_EMAIL
+MAIL_PASSWORD=YOUR_APP_PASSWORD
+MAIL_ENCRYPTION=tls
+```
+
+### Production Notes
+
+- Set `APP_ENV=production` and `APP_DEBUG=false`
+- Never commit `.env` files or real credentials to the repository
+- Rotate credentials immediately if a secret is ever exposed
+- Process queued jobs: `php artisan queue:work`
 
 ## User Roles
 
@@ -289,6 +352,6 @@ All rights reserved.
 
 ## Documentation
 
-- [Testing Strategy](docs/TESTING.md)
-- [High Performance Testing](docs/HIGH_PERFORMANCE_TESTING.md)
+- [Error Handling](docs/ERROR_HANDLING.md)
+- [Usage Guide](docs/USAGE_GUIDE.md)
 - [Project Plan](ProjectPlan.md)

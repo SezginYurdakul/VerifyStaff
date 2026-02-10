@@ -49,5 +49,5 @@ config.yml
 # Postman
 /postman
 
-# Documentation (generated/local)
-/docs
+# Postman collection is local-only
+# /docs was removed from gitignore to track design documents
