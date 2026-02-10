@@ -89,7 +89,6 @@ export default function LoginPage() {
       </form>
 
       <p className="mt-6 text-center text-sm text-gray-500">
-        {/* Contact your administrator if you need an account. */}
          Please use this test user: admin@verifystaff.com, password: password123
       </p>
     </Card>
