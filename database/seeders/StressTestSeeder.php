@@ -24,6 +24,7 @@ class StressTestSeeder extends Seeder
     public function run(): void
     {
         $this->command->info('Creating admin and representative...');
+        $passwordHash = bcrypt('password123');
 
         // Admin User
         $admin = User::firstOrCreate(
@@ -32,7 +33,7 @@ class StressTestSeeder extends Seeder
                 'name' => 'Admin User',
                 'phone' => '+905550000001',
                 'employee_id' => 'ADMIN001',
-                'password' => 'password123',
+                'password' => $passwordHash,
                 'role' => 'admin',
                 'status' => 'active',
                 'secret_token' => User::generateSecretToken(),
@@ -46,7 +47,7 @@ class StressTestSeeder extends Seeder
                 'name' => 'Willem de Jong',
                 'phone' => '+31612345678',
                 'employee_id' => 'REP001',
-                'password' => 'password123',
+                'password' => $passwordHash,
                 'role' => 'representative',
                 'status' => 'active',
                 'secret_token' => User::generateSecretToken(),
@@ -62,18 +63,21 @@ class StressTestSeeder extends Seeder
 
         // Create workers in batches
         $workerData = [];
+        $targetWorkerEmails = [];
 
         for ($i = 1; $i <= self::WORKER_COUNT; $i++) {
             // Assign department in round-robin fashion
             $departmentId = $departmentIds[($i - 1) % count($departmentIds)];
+            $email = "worker{$i}@example.com";
+            $targetWorkerEmails[] = $email;
 
             $workerData[] = [
                 'name' => $this->generateName(),
-                'email' => "worker{$i}@example.com",
+                'email' => $email,
                 'phone' => '+316' . str_pad($i, 8, '0', STR_PAD_LEFT),
                 'employee_id' => 'WRK' . str_pad($i, 5, '0', STR_PAD_LEFT),
                 'department_id' => $departmentId,
-                'password' => bcrypt('password123'),
+                'password' => $passwordHash,
                 'role' => 'worker',
                 'status' => 'active',
                 'secret_token' => User::generateSecretToken(),
@@ -82,18 +86,29 @@ class StressTestSeeder extends Seeder
             ];
 
             if (count($workerData) >= 100) {
-                DB::table('users')->insert($workerData);
+                DB::table('users')->upsert(
+                    $workerData,
+                    ['email'],
+                    ['name', 'phone', 'employee_id', 'department_id', 'password', 'status', 'updated_at']
+                );
                 $workerData = [];
                 $this->command->info("Created " . min($i, self::WORKER_COUNT) . " workers...");
             }
         }
 
         if (!empty($workerData)) {
-            DB::table('users')->insert($workerData);
+            DB::table('users')->upsert(
+                $workerData,
+                ['email'],
+                ['name', 'phone', 'employee_id', 'department_id', 'password', 'status', 'updated_at']
+            );
         }
 
-        // Get all worker IDs
-        $workerIds = User::where('role', 'worker')->pluck('id')->toArray();
+        // Get only stress-test worker IDs
+        $workerIds = User::where('role', 'worker')
+            ->whereIn('email', $targetWorkerEmails)
+            ->pluck('id')
+            ->toArray();
 
         $this->command->info('Creating attendance logs (' . (self::WORKER_COUNT * self::LOGS_PER_WORKER) . ' total)...');
 
@@ -109,9 +124,12 @@ class StressTestSeeder extends Seeder
         $timezone = 'Europe/Istanbul';
         $totalLogs = 0;
         $targetLogs = count($workerIds) * self::LOGS_PER_WORKER;
+        $nextLogId = ((int) DB::table('attendance_logs')->max('id')) + 1;
+        $batchRows = [];
+        $pairUpdates = [];
+        $now = now();
 
-        // We need to insert check-in first, get its ID, then insert check-out with paired_log_id
-        // So we'll process in smaller batches per worker
+        // Pre-assign IDs and insert in batches to avoid per-row insertGetId/update queries.
 
         foreach ($workerIds as $workerIndex => $workerId) {
             $dayOffset = 0;
@@ -153,15 +171,29 @@ class StressTestSeeder extends Seeder
                 $graceEnd = $expectedStart->copy()->addMinutes(self::LATE_THRESHOLD_MINUTES);
                 $isLate = $checkInTime->gt($graceEnd);
 
-                // Insert check-in log
-                $checkInId = DB::table('attendance_logs')->insertGetId(
-                    $this->buildCheckInData($workerId, $repId, $checkInTime, $timezone, $isLate)
+                $checkInId = $nextLogId++;
+                $checkOutId = null;
+                if ($logsCreated + 1 < self::LOGS_PER_WORKER) {
+                    $checkOutId = $nextLogId++;
+                }
+
+                $batchRows[] = $this->buildCheckInData(
+                    $checkInId,
+                    $workerId,
+                    $repId,
+                    $checkInTime,
+                    $timezone,
+                    $isLate,
+                    $now
                 );
+                if ($checkOutId !== null) {
+                    $pairUpdates[$checkInId] = $checkOutId;
+                }
                 $logsCreated++;
                 $totalLogs++;
 
                 // Check-out log with pairing
-                if ($logsCreated < self::LOGS_PER_WORKER) {
+                if ($checkOutId !== null) {
                     // Calculate work duration
                     $workMinutes = $checkInTime->diffInMinutes($checkOutTime);
 
@@ -173,16 +205,26 @@ class StressTestSeeder extends Seeder
                     $expectedEnd = $checkOutTime->copy()->setTimeFromTimeString(self::WORK_END_TIME);
                     $isEarlyDeparture = $checkOutTime->lt($expectedEnd);
 
-                    // Insert check-out log
-                    $checkOutId = DB::table('attendance_logs')->insertGetId(
-                        $this->buildCheckOutData($workerId, $repId, $checkOutTime, $timezone, $checkInId, $workMinutes, $isOvertime, $overtimeMinutes, $isEarlyDeparture)
+                    $batchRows[] = $this->buildCheckOutData(
+                        $checkOutId,
+                        $workerId,
+                        $repId,
+                        $checkOutTime,
+                        $timezone,
+                        $checkInId,
+                        $workMinutes,
+                        $isOvertime,
+                        $overtimeMinutes,
+                        $isEarlyDeparture,
+                        $now
                     );
-
-                    // Update check-in with paired_log_id
-                    DB::table('attendance_logs')->where('id', $checkInId)->update(['paired_log_id' => $checkOutId]);
 
                     $logsCreated++;
                     $totalLogs++;
+                }
+
+                if (count($batchRows) >= self::BATCH_SIZE) {
+                    $this->flushAttendanceBatch($batchRows, $pairUpdates);
                 }
             }
 
@@ -193,14 +235,28 @@ class StressTestSeeder extends Seeder
             }
         }
 
+        if (! empty($batchRows)) {
+            $this->flushAttendanceBatch($batchRows, $pairUpdates);
+        }
+
+        $this->syncAttendanceLogSequence();
         $this->command->info("Progress: {$totalLogs} / {$targetLogs} logs (100%)");
     }
 
-    private function buildCheckInData(int $workerId, int $repId, Carbon $deviceTime, string $timezone, bool $isLate): array
+    private function buildCheckInData(
+        int $id,
+        int $workerId,
+        int $repId,
+        Carbon $deviceTime,
+        string $timezone,
+        bool $isLate,
+        Carbon $now
+    ): array
     {
-        $eventId = hash('sha256', $workerId . $repId . $deviceTime->toIso8601String() . 'in' . uniqid());
+        $eventId = "seed-{$workerId}-{$id}-in";
 
         return [
+            'id' => $id,
             'event_id' => $eventId,
             'worker_id' => $workerId,
             'rep_id' => $repId,
@@ -217,21 +273,61 @@ class StressTestSeeder extends Seeder
             'longitude' => 28.9784 + (rand(-1000, 1000) / 100000),
             // Calculated fields for check-in
             'is_late' => $isLate,
-            'paired_log_id' => null, // Will be updated after check-out is created
+            'paired_log_id' => null,
             'work_minutes' => null,
             'is_overtime' => null,
             'overtime_minutes' => null,
             'is_early_departure' => null,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => $now,
+            'updated_at' => $now,
         ];
     }
 
-    private function buildCheckOutData(int $workerId, int $repId, Carbon $deviceTime, string $timezone, int $pairedLogId, int $workMinutes, bool $isOvertime, int $overtimeMinutes, bool $isEarlyDeparture): array
+    private function flushAttendanceBatch(array &$batchRows, array &$pairUpdates): void
     {
-        $eventId = hash('sha256', $workerId . $repId . $deviceTime->toIso8601String() . 'out' . uniqid());
+        if (empty($batchRows)) {
+            return;
+        }
+
+        DB::table('attendance_logs')->insert($batchRows);
+
+        if (!empty($pairUpdates)) {
+            $ids = array_keys($pairUpdates);
+            $caseSql = 'CASE id';
+
+            foreach ($pairUpdates as $checkInId => $checkOutId) {
+                $caseSql .= " WHEN {$checkInId} THEN {$checkOutId}";
+            }
+
+            $caseSql .= ' END';
+
+            DB::table('attendance_logs')
+                ->whereIn('id', $ids)
+                ->update(['paired_log_id' => DB::raw($caseSql)]);
+        }
+
+        $batchRows = [];
+        $pairUpdates = [];
+    }
+
+    private function buildCheckOutData(
+        int $id,
+        int $workerId,
+        int $repId,
+        Carbon $deviceTime,
+        string $timezone,
+        int $pairedLogId,
+        int $workMinutes,
+        bool $isOvertime,
+        int $overtimeMinutes,
+        bool $isEarlyDeparture,
+        Carbon $now
+    ): array
+    {
+        $eventId = "seed-{$workerId}-{$id}-out";
 
         return [
+            'id' => $id,
             'event_id' => $eventId,
             'worker_id' => $workerId,
             'rep_id' => $repId,
@@ -253,9 +349,18 @@ class StressTestSeeder extends Seeder
             'is_overtime' => $isOvertime,
             'overtime_minutes' => $overtimeMinutes,
             'is_early_departure' => $isEarlyDeparture,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => $now,
+            'updated_at' => $now,
         ];
+    }
+
+    private function syncAttendanceLogSequence(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        DB::statement("SELECT setval(pg_get_serial_sequence('attendance_logs', 'id'), COALESCE(MAX(id), 1), true) FROM attendance_logs");
     }
 
     private function generateName(): string
