@@ -4,6 +4,7 @@ namespace Tests\Feature\Api;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Mail\UserInviteMail;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
@@ -123,6 +124,20 @@ class UsersTest extends TestCase
         $this->assertNotNull($user->invite_token);
         $this->assertNotNull($user->invite_expires_at);
         $this->assertNull($user->password);
+    }
+
+    public function test_invite_email_is_queued_on_user_creation(): void
+    {
+        $this->withHeader('Authorization', "Bearer {$this->adminToken}")
+            ->postJson('/api/v1/users', [
+                'name' => 'Queue Test User',
+                'email' => 'queuetest@example.com',
+                'role' => 'worker',
+            ]);
+
+        Mail::assertQueued(UserInviteMail::class, function ($mail) {
+            return $mail->hasTo('queuetest@example.com');
+        });
     }
 
     public function test_create_user_fails_with_duplicate_email(): void
