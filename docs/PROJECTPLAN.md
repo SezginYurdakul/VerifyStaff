@@ -24,7 +24,7 @@ The system operates on a **dual-mode validation model**:
 
 | Component | Technology | Role |
 | :--- | :--- | :--- |
-| **Backend** | Laravel 11 (PHP 8.3+) | Central database, Auth, Reporting API |
+| **Backend** | Laravel 12 (PHP 8.3+) | Central database, Auth, Reporting API |
 | **Frontend** | React (Vite) | Progressive Web App (PWA) interface |
 | **Database** | MySQL 8.0 | Server-side persistent storage |
 | **Offline DB** | IndexedDB (Dexie.js) | Browser-side storage for offline logs |
